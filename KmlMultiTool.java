@@ -1,3 +1,5 @@
+// IMPORTS
+
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
@@ -28,9 +30,7 @@ import java.util.regex.Pattern;
 import java.util.HashMap;
 import java.util.List;
 
-// ==============================================================================
 // CLASSES AUXILIARES (COMPARTILHADAS)
-// ==============================================================================
 
 class ColorPreview extends JPanel {
     private Color color;
@@ -94,9 +94,7 @@ class StyleListItem {
     }
 }
 
-// ==============================================================================
 // CLASSE PRINCIPAL COM NAVEGAÇÃO
-// ==============================================================================
 
 public class KmlMultiTool extends JDialog {
 
@@ -107,7 +105,7 @@ public class KmlMultiTool extends JDialog {
     private StateFilterPanel stateFilterPanel;
     private StyleEditorPanel styleEditorPanel;
 
-    // Botões de navegação — guardamos referência para poder destacar o ativo
+    // Botões de navegação — guarda referência para poder destacar o ativo
     private JButton btnPage1, btnPage2, btnPage3;
 
     public KmlMultiTool() {
@@ -180,9 +178,7 @@ public class KmlMultiTool extends JDialog {
         });
     }
 
-// ==============================================================================
 // PÁGINA 1 — EDITOR DE BALÃO
-// ==============================================================================
 
     class ImageEditorPanel extends JPanel {
 
@@ -552,9 +548,7 @@ public class KmlMultiTool extends JDialog {
         }
     }
 
-// ==============================================================================
 // PÁGINA 2 — FILTRO POR ESTADO  (Nominatim / OpenStreetMap)
-// ==============================================================================
 
     class StateFilterPanel extends JPanel {
 
@@ -705,9 +699,14 @@ public class KmlMultiTool extends JDialog {
                     try {
                         String result = get();
                         if (result != null && !result.isEmpty()) {
-                            txtPolygon.setText(result);
-                            long n = result.lines().filter(l -> !l.isBlank()).count();
-                            statusLabel.setText("✅ Polígono de " + estado + " carregado (" + n + " pontos).");
+                            // Aplicar simplificação de RDP aqui para performance!
+                            String simplificado = simplificarTextoPoligono(result, 0.005);
+                            
+                            txtPolygon.setText(simplificado);
+                            long nOriginais = result.lines().filter(l -> !l.isBlank()).count();
+                            long nSimplificados = simplificado.lines().filter(l -> !l.isBlank()).count();
+                            
+                            statusLabel.setText("✅ Polígono de " + estado + " carregado (" + nOriginais + " reduzidos para " + nSimplificados + " pts).");
                         } else {
                             statusLabel.setText("⚠ Nenhum polígono retornado para " + estado + ".");
                         }
@@ -740,7 +739,7 @@ public class KmlMultiTool extends JDialog {
             URL url = new URL(urlStr);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
-            // User-Agent
+            // User-Agent é obrigatório pela política do Nominatim
             conn.setRequestProperty("User-Agent", "KmlMultiTool/1.0 (github.com/ericodb/KmlMultiTool)");
             conn.setConnectTimeout(10_000);
             conn.setReadTimeout(30_000);
@@ -771,10 +770,6 @@ public class KmlMultiTool extends JDialog {
             // Estratégia: encontrar o bloco mais longo de pares [lon,lat]
 
             Pattern coordPairPat = Pattern.compile("\\[(-?\\d+\\.\\d+),(-?\\d+\\.\\d+)\\]");
-
-            // Identifica se é MultiPolygon e pega o maior anel
-            // Para simplificar, varre todos os pares e coleta o grupo contíguo mais longo
-            // delimitado por "[[[" (início de anel externo)
 
             // Divide em "anéis" pelo padrão [[[ ... ]]]
             Pattern ringPat = Pattern.compile("\\[\\[\\[(.+?)\\]\\]\\]", Pattern.DOTALL);
@@ -873,6 +868,72 @@ public class KmlMultiTool extends JDialog {
                 txtOutput.setText(ch.getSelectedFile().getAbsolutePath());
         }
 
+        // ALGORITMO RAMER-DOUGLAS-PEUCKER (SIMPLIFICAÇÃO DE POLÍGONO)
+
+        private String simplificarTextoPoligono(String rawTexto, double epsilon) {
+            List<double[]> pts = new ArrayList<>();
+            for (String linha : rawTexto.split("\\n")) {
+                if(linha.isBlank()) continue;
+                String[] p = linha.split(",");
+                pts.add(new double[]{Double.parseDouble(p[0]), Double.parseDouble(p[1])});
+            }
+            
+            List<double[]> simplificados = aplicarRDP(pts, epsilon);
+            
+            StringBuilder sb = new StringBuilder();
+            for(double[] p : simplificados) {
+                sb.append(p[0]).append(",").append(p[1]).append("\n");
+            }
+            return sb.toString();
+        }
+
+        private List<double[]> aplicarRDP(List<double[]> pts, double epsilon) {
+            if (pts.size() < 3) return pts;
+            
+            int index = 0;
+            double maxDist = 0;
+            
+            // Encontra o ponto mais distante do segmento de reta que liga o início ao fim
+            for (int i = 1; i < pts.size() - 1; i++) {
+                double dist = distanciaPerpendicular(pts.get(i), pts.get(0), pts.get(pts.size() - 1));
+                if (dist > maxDist) {
+                    index = i;
+                    maxDist = dist;
+                }
+            }
+            
+            List<double[]> result = new ArrayList<>();
+            // Se a distância máxima for maior que o epsilon, simplifica recursivamente
+            if (maxDist > epsilon) {
+                List<double[]> left = aplicarRDP(pts.subList(0, index + 1), epsilon);
+                List<double[]> right = aplicarRDP(pts.subList(index, pts.size()), epsilon);
+                
+                result.addAll(left.subList(0, left.size() - 1));
+                result.addAll(right);
+            } else {
+                result.add(pts.get(0));
+                result.add(pts.get(pts.size() - 1));
+            }
+            return result;
+        }
+
+        private double distanciaPerpendicular(double[] pt, double[] lineStart, double[] lineEnd) {
+            double x0 = pt[0], y0 = pt[1];
+            double x1 = lineStart[0], y1 = lineStart[1];
+            double x2 = lineEnd[0], y2 = lineEnd[1];
+            
+            double dx = x2 - x1;
+            double dy = y2 - y1;
+            
+            if (dx == 0.0 && dy == 0.0) {
+                return Math.sqrt(Math.pow(x0 - x1, 2) + Math.pow(y0 - y1, 2));
+            }
+            
+            double num = Math.abs(dy * x0 - dx * y0 + x2 * y1 - y2 * x1);
+            double den = Math.sqrt(dx * dx + dy * dy);
+            return num / den;
+        }
+
         // ---- ponto no polígono (ray-casting) ----
         private boolean estaDentro(double lon, double lat, double[][] poly) {
             int n = poly.length;
@@ -888,6 +949,115 @@ public class KmlMultiTool extends JDialog {
                 px = qx; py = qy;
             }
             return inside;
+        }
+
+        /**
+         * Calcula o ponto de interseção entre o segmento (x1,y1)-(x2,y2)
+         * e a aresta do polígono (x3,y3)-(x4,y4).
+         * Retorna null se não houver interseção no intervalo dos segmentos.
+         */
+        private double[] intersecao(double x1, double y1, double x2, double y2,
+                                     double x3, double y3, double x4, double y4) {
+            double denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+            if (Math.abs(denom) < 1e-12) return null; // paralelos
+            double t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+            double u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+            if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+                return new double[]{ x1 + t * (x2 - x1), y1 + t * (y2 - y1) };
+            }
+            return null;
+        }
+
+        /**
+         * Recorta uma LineString pelo polígono usando o algoritmo de Cyrus-Beck adaptado:
+         * percorre cada segmento da linha, detecta cruzamentos com as arestas do polígono
+         * e divide em sub-segmentos internos.
+         * Retorna uma lista de sub-linhas, cada uma como lista de pontos [lon, lat].
+         */
+        private List<List<double[]>> recortarLinha(List<double[]> pts, double[][] poly) {
+            List<List<double[]>> resultado = new ArrayList<>();
+            if (pts.isEmpty()) return resultado;
+
+            List<double[]> segmentoAtual = new ArrayList<>();
+            boolean dentroPrev = estaDentro(pts.get(0)[0], pts.get(0)[1], poly);
+            if (dentroPrev) segmentoAtual.add(pts.get(0));
+
+            for (int i = 1; i < pts.size(); i++) {
+                double x1 = pts.get(i-1)[0], y1 = pts.get(i-1)[1];
+                double x2 = pts.get(i)[0],   y2 = pts.get(i)[1];
+                boolean dentroAtual = estaDentro(x2, y2, poly);
+
+                // Coleta todos os pontos de cruzamento deste segmento com todas as arestas
+                List<double[]> crossings = new ArrayList<>();
+                int n = poly.length;
+                for (int j = 0; j < n; j++) {
+                    double x3 = poly[j][0],          y3 = poly[j][1];
+                    double x4 = poly[(j+1) % n][0],  y4 = poly[(j+1) % n][1];
+                    double[] pt = intersecao(x1, y1, x2, y2, x3, y3, x4, y4);
+                    if (pt != null) crossings.add(pt);
+                }
+
+                // Ordena os cruzamentos pela distância a partir do ponto inicial do segmento
+                crossings.sort((a, b) -> {
+                    double da = (a[0]-x1)*(a[0]-x1) + (a[1]-y1)*(a[1]-y1);
+                    double db = (b[0]-x1)*(b[0]-x1) + (b[1]-y1)*(b[1]-y1);
+                    return Double.compare(da, db);
+                });
+
+                // Processa os cruzamentos alternando dentro/fora
+                boolean estado = dentroPrev;
+                for (double[] cross : crossings) {
+                    if (estado) {
+                        // Estava dentro, saindo: fecha o segmento atual no ponto de cruzamento
+                        segmentoAtual.add(cross);
+                        if (segmentoAtual.size() >= 2) resultado.add(new ArrayList<>(segmentoAtual));
+                        segmentoAtual.clear();
+                    } else {
+                        // Estava fora, entrando: inicia novo segmento no cruzamento
+                        segmentoAtual.add(cross);
+                    }
+                    estado = !estado;
+                }
+
+                // Adiciona o ponto final se estiver dentro
+                if (dentroAtual) {
+                    segmentoAtual.add(new double[]{x2, y2});
+                }
+                dentroPrev = dentroAtual;
+            }
+
+            // Fecha último segmento aberto
+            if (segmentoAtual.size() >= 2) resultado.add(segmentoAtual);
+            return resultado;
+        }
+
+        /**
+         * Lê as coordenadas KML de uma tag <coordinates> e retorna lista de pontos [lon, lat, alt?].
+         */
+        private List<double[]> lerCoordenadas(String raw) {
+            List<double[]> pts = new ArrayList<>();
+            for (String tuple : raw.trim().split("\\s+")) {
+                String[] p = tuple.split(",");
+                if (p.length >= 2) {
+                    double lon = Double.parseDouble(p[0].trim());
+                    double lat = Double.parseDouble(p[1].trim());
+                    double alt = (p.length >= 3) ? Double.parseDouble(p[2].trim()) : 0.0;
+                    pts.add(new double[]{lon, lat, alt});
+                }
+            }
+            return pts;
+        }
+
+        /**
+         * Converte lista de pontos para string de coordenadas KML "lon,lat,alt".
+         */
+        private String pontosParaKml(List<double[]> pts) {
+            StringBuilder sb = new StringBuilder();
+            for (double[] p : pts) {
+                if (sb.length() > 0) sb.append(" ");
+                sb.append(String.format(java.util.Locale.US, "%.8f,%.8f,%.1f", p[0], p[1], p.length > 2 ? p[2] : 0.0));
+            }
+            return sb.toString();
         }
 
         // ---- converte textarea → double[][] ----
@@ -940,29 +1110,88 @@ public class KmlMultiTool extends JDialog {
                     doc = dbf.newDocumentBuilder().parse(new File(inputPath));
                 }
 
-                List<Node> toRemove = new ArrayList<>();
+                List<Node> toRemove  = new ArrayList<>();
+                // Placemarks de linha que precisam ser substituídos por múltiplos recortados
+                List<Node[]> toSplit = new ArrayList<>(); // [placemark, novoCoordNode, sublinhas...]
+
                 NodeList pms = doc.getElementsByTagName("Placemark");
                 int total = pms.getLength();
+                int totalPontos = 0, totalLinhas = 0;
+                int pontosRemovidos = 0, linhasRecortadas = 0;
+
                 for (int i = 0; i < total; i++) {
                     Node pm = pms.item(i);
-                    Node pointNode = ((Element) pm).getElementsByTagName("Point").item(0);
-                    if (pointNode == null) { toRemove.add(pm); continue; }
-                    Node coordNode = ((Element) pointNode).getElementsByTagName("coordinates").item(0);
-                    if (coordNode == null) { toRemove.add(pm); continue; }
-                    String[] parts = coordNode.getTextContent().trim().split(",");
-                    double lon = Double.parseDouble(parts[0]);
-                    double lat = Double.parseDouble(parts[1]);
-                    if (!estaDentro(lon, lat, poly)) toRemove.add(pm);
+                    Element pmEl = (Element) pm;
+
+                    // ---- PONTO ----
+                    Node pointNode = pmEl.getElementsByTagName("Point").item(0);
+                    if (pointNode != null) {
+                        totalPontos++;
+                        Node coordNode = ((Element) pointNode).getElementsByTagName("coordinates").item(0);
+                        if (coordNode == null) { toRemove.add(pm); pontosRemovidos++; continue; }
+                        String[] parts = coordNode.getTextContent().trim().split(",");
+                        double lon = Double.parseDouble(parts[0]);
+                        double lat = Double.parseDouble(parts[1]);
+                        if (!estaDentro(lon, lat, poly)) { toRemove.add(pm); pontosRemovidos++; }
+                        continue;
+                    }
+
+                    // ---- LINESTRING ----
+                    Node lineNode = pmEl.getElementsByTagName("LineString").item(0);
+                    if (lineNode != null) {
+                        totalLinhas++;
+                        Node coordNode = ((Element) lineNode).getElementsByTagName("coordinates").item(0);
+                        if (coordNode == null) { toRemove.add(pm); continue; }
+
+                        List<double[]> pts = lerCoordenadas(coordNode.getTextContent());
+                        List<List<double[]>> sublinhas = recortarLinha(pts, poly);
+
+                        if (sublinhas.isEmpty()) {
+                            // Linha inteiramente fora — remove
+                            toRemove.add(pm);
+                        } else if (sublinhas.size() == 1) {
+                            // Linha parcialmente cortada — atualiza coordenadas no lugar
+                            coordNode.setTextContent(pontosParaKml(sublinhas.get(0)));
+                            linhasRecortadas++;
+                        } else {
+                            // Linha dividida em vários trechos — clona o Placemark para cada trecho
+                            linhasRecortadas++;
+                            // Atualiza o primeiro trecho no Placemark original
+                            coordNode.setTextContent(pontosParaKml(sublinhas.get(0)));
+                            // Cria novos Placemarks para os trechos adicionais
+                            Node parent = pm.getParentNode();
+                            for (int s = 1; s < sublinhas.size(); s++) {
+                                Node clone = pm.cloneNode(true);
+                                Node cloneCoord = ((Element) clone)
+                                        .getElementsByTagName("coordinates").item(0);
+                                cloneCoord.setTextContent(pontosParaKml(sublinhas.get(s)));
+                                // Ajusta o nome para indicar o trecho
+                                Node nameNode = ((Element) clone).getElementsByTagName("name").item(0);
+                                if (nameNode != null)
+                                    nameNode.setTextContent(nameNode.getTextContent() + " (" + (s+1) + ")");
+                                parent.insertBefore(clone, pm.getNextSibling());
+                            }
+                        }
+                        continue;
+                    }
+
+                    // ---- OUTROS (Polygon, MultiGeometry, etc.) ----
                 }
+
                 for (Node n : toRemove) n.getParentNode().removeChild(n);
 
                 salvarDoc(doc, outputPath);
 
-                int kept = total - toRemove.size();
-                statusLabel.setText("✅ Concluído: " + kept + " de " + total + " pontos mantidos.");
-                JOptionPane.showMessageDialog(this,
-                        "Filtro aplicado!\n" + kept + " de " + total + " placemarks mantidos.\nSalvo em: " + outputPath,
-                        "Sucesso", JOptionPane.INFORMATION_MESSAGE);
+                int keptPontos = totalPontos - pontosRemovidos;
+                String msg = "Filtro aplicado!\n"
+                        + keptPontos + " de " + totalPontos + " pontos mantidos.\n"
+                        + totalLinhas + " linhas processadas"
+                        + (linhasRecortadas > 0 ? " (" + linhasRecortadas + " recortadas no limite)." : ".") + "\n"
+                        + "Salvo em: " + outputPath;
+                statusLabel.setText("\u2705 Pontos: " + keptPontos + "/" + totalPontos
+                        + "  |  Linhas: " + totalLinhas
+                        + (linhasRecortadas > 0 ? " (" + linhasRecortadas + " recortadas)" : ""));
+                JOptionPane.showMessageDialog(this, msg, "Sucesso", JOptionPane.INFORMATION_MESSAGE);
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this,
                         "Erro ao processar:\n" + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
@@ -970,9 +1199,7 @@ public class KmlMultiTool extends JDialog {
         }
     }
 
-// ==============================================================================
 // PÁGINA 3 — EDITOR DE ESTILOS
-// ==============================================================================
 
     class StyleEditorPanel extends JPanel {
 
@@ -1223,12 +1450,6 @@ public class KmlMultiTool extends JDialog {
                 // Persiste edições da tabela
                 String key = txtKey.getText().trim();
                 if (!key.isEmpty()) {
-                    // Rebuil o mapa com valores atuais da tabela
-                    // (O usuário pode ter editado células — precisamos rastrear old→new)
-                    // Como a tabela é editável inline, os nós já têm os valores originais do mapa;
-                    // Iteramos por linha e atualizamos os nós correspondentes ao valor original.
-                    // Nota: se o usuário editou o valor na célula, a chave do mapa pode não bater.
-                    // Abordagem segura: recoletar pelo índice da lista original.
                     List<String> originalKeys = new ArrayList<>(valueNodesMap.keySet());
                     for (int i = 0; i < Math.min(tableModel.getRowCount(), originalKeys.size()); i++) {
                         String oldVal = originalKeys.get(i);
@@ -1250,9 +1471,7 @@ public class KmlMultiTool extends JDialog {
         }
     }
 
-// ==============================================================================
 // UTILITÁRIOS COMPARTILHADOS
-// ==============================================================================
 
     /**
      * Salva o Document XML em um arquivo KML ou KMZ.
