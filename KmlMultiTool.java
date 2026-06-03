@@ -96,7 +96,7 @@ class StyleListItem {
 
 // CLASSE PRINCIPAL COM NAVEGAÇÃO
 
-public class KmlMultiTool extends JDialog {
+public class KmlMultiTool extends JFrame {
 
     private CardLayout cardLayout;
     private JPanel     container;
@@ -110,7 +110,6 @@ public class KmlMultiTool extends JDialog {
 
     public KmlMultiTool() {
         setTitle("KML Multi-Ferramenta");
-        setModal(true);
         setSize(980, 780);
         setMinimumSize(new Dimension(800, 600));
         setLocationRelativeTo(null);
@@ -133,7 +132,7 @@ public class KmlMultiTool extends JDialog {
         btnPage1 = new JButton("🖊  Editor de Balão");
         btnPage2 = new JButton("📍  Filtro por Estado");
         btnPage3 = new JButton("🎨  Editor de Estilos");
-
+		
         btnPage1.addActionListener(e -> mudarPagina("page1", btnPage1));
         btnPage2.addActionListener(e -> mudarPagina("page2", btnPage2));
         btnPage3.addActionListener(e -> mudarPagina("page3", btnPage3));
@@ -141,7 +140,7 @@ public class KmlMultiTool extends JDialog {
         navPanel.add(btnPage1);
         navPanel.add(btnPage2);
         navPanel.add(btnPage3);
-
+		
         add(navPanel,  BorderLayout.NORTH);
         add(container, BorderLayout.CENTER);
 
@@ -173,7 +172,7 @@ public class KmlMultiTool extends JDialog {
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             KmlMultiTool dialog = new KmlMultiTool();
-            dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
+            dialog.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
             dialog.setVisible(true);
         });
     }
@@ -193,21 +192,18 @@ public class KmlMultiTool extends JDialog {
         private List<Node> placemarks = new ArrayList<>();
 
         public ImageEditorPanel() {
-            super(new BorderLayout(0, 4));
-            setBorder(new EmptyBorder(6, 8, 6, 8));
-
+            super(new BorderLayout(5, 5));
+            setBorder(new EmptyBorder(10, 10, 10, 10));
+        
             // ---- painel superior ----
             JPanel panelTop = new JPanel();
             panelTop.setLayout(new BoxLayout(panelTop, BoxLayout.Y_AXIS));
-
+        
             txtInput  = new JTextField();
             txtOutput = new JTextField();
-            panelTop.add(fileRow("Arquivo de entrada (KML/KMZ):", txtInput,
-                    e -> selecionarEntrada()));
-            panelTop.add(fileRow("Arquivo de saída (KML/KMZ):",  txtOutput,
-                    e -> selecionarSaida()));
-
-            // ---- opções ----
+            panelTop.add(fileRow("Arquivo de entrada (KML/KMZ):", txtInput, e -> selecionarEntrada()));
+            panelTop.add(fileRow("Arquivo de saída (KML/KMZ):",  txtOutput, e -> selecionarSaida()));
+        
             JPanel panelOption = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
             checkFormat = new JCheckBox("Aplicar nova formatação com cores e bordas");
             panelOption.add(checkFormat);
@@ -215,45 +211,52 @@ public class KmlMultiTool extends JDialog {
             txtSeparator = new JTextField("=", 3);
             panelOption.add(txtSeparator);
             panelTop.add(panelOption);
-
-            // ---- cores ----
+        
             JPanel panelColors = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
             panelColors.add(new JLabel("Cores:"));
             txtBgColor1    = addColorPicker(panelColors, "Fundo 1", "#DDDDFF");
             txtBgColor2    = addColorPicker(panelColors, "Fundo 2", "#FFFFFF");
             txtBorderColor = addColorPicker(panelColors, "Borda",   "#000000");
             panelTop.add(panelColors);
-
-            // ---- imagens / hyperlinks ----
-            JPanel panelEditLeft = new JPanel();
-            panelEditLeft.setLayout(new BoxLayout(panelEditLeft, BoxLayout.Y_AXIS));
-
-            panelEditLeft.add(sectionHeader("Imagens e Hiperlinks:", e -> addImageLinkPair()));
+        
+            // ---- painel esquerdo ----
+            JPanel panelEditLeft = new JPanel(new GridBagLayout());
+            GridBagConstraints gbc = new GridBagConstraints();
+            gbc.fill = GridBagConstraints.BOTH;
+            gbc.weightx = 1.0;
+            gbc.gridx = 0;
+        
+            // Seção Imagens
+            gbc.weighty = 0; 
+            panelEditLeft.add(sectionHeader("Imagens e Hiperlinks:", e -> addImageLinkPair()), gbc);
+            
             imageLinkContainer = new JPanel();
             imageLinkContainer.setLayout(new BoxLayout(imageLinkContainer, BoxLayout.Y_AXIS));
             addImageLinkPair();
             JScrollPane scrollImages = new JScrollPane(imageLinkContainer);
-            scrollImages.setPreferredSize(new Dimension(460, 80));
-            panelEditLeft.add(scrollImages);
-
-            // ---- find / replace ----
-            panelEditLeft.add(sectionHeader("Substituir Palavras na Descrição:", e -> addFindReplacePair()));
+            gbc.weighty = 0.5; 
+            panelEditLeft.add(scrollImages, gbc);
+        
+            // Seção Substituir
+            gbc.weighty = 0;
+            panelEditLeft.add(sectionHeader("Substituir Palavras na Descrição:", e -> addFindReplacePair()), gbc);
+            
             findReplaceContainer = new JPanel();
             findReplaceContainer.setLayout(new BoxLayout(findReplaceContainer, BoxLayout.Y_AXIS));
             addFindReplacePair();
             JScrollPane scrollReplace = new JScrollPane(findReplaceContainer);
-            scrollReplace.setPreferredSize(new Dimension(460, 180));
-            panelEditLeft.add(scrollReplace);
-
+            gbc.weighty = 1.0;
+            panelEditLeft.add(scrollReplace, gbc);
+        
             // ---- preview ----
             preview = new JEditorPane("text/html", "");
             preview.setEditable(false);
             JScrollPane scrollPreview = new JScrollPane(preview);
-
+        
             JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, panelEditLeft, scrollPreview);
-            split.setDividerLocation(520);
+            split.setDividerLocation(575);
             split.setResizeWeight(0.45);
-
+        
             // ---- botões ----
             JPanel panelBtns = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 4));
             JButton btnPreview = new JButton("🔍  Atualizar Preview");
@@ -262,7 +265,7 @@ public class KmlMultiTool extends JDialog {
             btnExec.addActionListener(e -> executar());
             panelBtns.add(btnPreview);
             panelBtns.add(btnExec);
-
+        
             add(panelTop,   BorderLayout.NORTH);
             add(split,      BorderLayout.CENTER);
             add(panelBtns,  BorderLayout.SOUTH);
@@ -455,7 +458,7 @@ public class KmlMultiTool extends JDialog {
         private void addFindReplacePair() {
             JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
             JTextField findF = new JTextField(14), replF = new JTextField(14);
-            row.add(new JLabel("Buscar:"));          row.add(findF);
+            row.add(new JLabel("Buscar chave/valor:")); row.add(findF);
             row.add(new JLabel("Substituir por:")); row.add(replF);
             JButton rem = new JButton("−");
             rem.setMargin(new Insets(0, 5, 0, 5));
@@ -699,7 +702,7 @@ public class KmlMultiTool extends JDialog {
                     try {
                         String result = get();
                         if (result != null && !result.isEmpty()) {
-                            // Aplicar simplificação de RDP aqui para performance!
+                            // Aplicar simplificação de RDP para performance!
                             String simplificado = simplificarTextoPoligono(result, 0.005);
                             
                             txtPolygon.setText(simplificado);
@@ -935,7 +938,26 @@ public class KmlMultiTool extends JDialog {
         }
 
         // ---- ponto no polígono (ray-casting) ----
-        private boolean estaDentro(double lon, double lat, double[][] poly) {
+        /** Calcula bounding box [minLon, minLat, maxLon, maxLat] do polígono. */
+        private double[] calcBbox(double[][] poly) {
+            double minLon = poly[0][0], minLat = poly[0][1];
+            double maxLon = poly[0][0], maxLat = poly[0][1];
+            for (double[] p : poly) {
+                if (p[0] < minLon) minLon = p[0];
+                if (p[0] > maxLon) maxLon = p[0];
+                if (p[1] < minLat) minLat = p[1];
+                if (p[1] > maxLat) maxLat = p[1];
+            }
+            return new double[]{minLon, minLat, maxLon, maxLat};
+        }
+
+        /**
+         * Ray-casting com rejeição rápida por bounding box.
+         * bbox = [minLon, minLat, maxLon, maxLat]
+         */
+        private boolean estaDentro(double lon, double lat, double[][] poly, double[] bbox) {
+            // Rejeição imediata — cobre ~90% dos casos fora do estado
+            if (lon < bbox[0] || lon > bbox[2] || lat < bbox[1] || lat > bbox[3]) return false;
             int n = poly.length;
             boolean inside = false;
             double px = poly[0][0], py = poly[0][1];
@@ -974,18 +996,18 @@ public class KmlMultiTool extends JDialog {
          * e divide em sub-segmentos internos.
          * Retorna uma lista de sub-linhas, cada uma como lista de pontos [lon, lat].
          */
-        private List<List<double[]>> recortarLinha(List<double[]> pts, double[][] poly) {
+        private List<List<double[]>> recortarLinha(List<double[]> pts, double[][] poly, double[] bbox) {
             List<List<double[]>> resultado = new ArrayList<>();
             if (pts.isEmpty()) return resultado;
 
             List<double[]> segmentoAtual = new ArrayList<>();
-            boolean dentroPrev = estaDentro(pts.get(0)[0], pts.get(0)[1], poly);
+            boolean dentroPrev = estaDentro(pts.get(0)[0], pts.get(0)[1], poly, bbox);
             if (dentroPrev) segmentoAtual.add(pts.get(0));
 
             for (int i = 1; i < pts.size(); i++) {
                 double x1 = pts.get(i-1)[0], y1 = pts.get(i-1)[1];
                 double x2 = pts.get(i)[0],   y2 = pts.get(i)[1];
-                boolean dentroAtual = estaDentro(x2, y2, poly);
+                boolean dentroAtual = estaDentro(x2, y2, poly, bbox);
 
                 // Coleta todos os pontos de cruzamento deste segmento com todas as arestas
                 List<double[]> crossings = new ArrayList<>();
@@ -1110,17 +1132,21 @@ public class KmlMultiTool extends JDialog {
                     doc = dbf.newDocumentBuilder().parse(new File(inputPath));
                 }
 
-                List<Node> toRemove  = new ArrayList<>();
-                // Placemarks de linha que precisam ser substituídos por múltiplos recortados
-                List<Node[]> toSplit = new ArrayList<>(); // [placemark, novoCoordNode, sublinhas...]
+                // Calcula bbox uma vez — evita recalcular para cada ponto
+                double[] bbox = calcBbox(poly);
 
-                NodeList pms = doc.getElementsByTagName("Placemark");
-                int total = pms.getLength();
+                // Snapshot do NodeList em uma lista estática (NodeList é "live" no DOM —
+                // se removermos nós durante a iteração, os índices se deslocam e pulamos elementos)
+                List<Node> toRemove = new ArrayList<>();
+                NodeList pmsLive = doc.getElementsByTagName("Placemark");
+                List<Node> allPms = new ArrayList<>();
+                for (int i = 0; i < pmsLive.getLength(); i++) allPms.add(pmsLive.item(i));
+
+                int total = allPms.size();
                 int totalPontos = 0, totalLinhas = 0;
                 int pontosRemovidos = 0, linhasRecortadas = 0;
 
-                for (int i = 0; i < total; i++) {
-                    Node pm = pms.item(i);
+                for (Node pm : allPms) {
                     Element pmEl = (Element) pm;
 
                     // ---- PONTO ----
@@ -1132,7 +1158,7 @@ public class KmlMultiTool extends JDialog {
                         String[] parts = coordNode.getTextContent().trim().split(",");
                         double lon = Double.parseDouble(parts[0]);
                         double lat = Double.parseDouble(parts[1]);
-                        if (!estaDentro(lon, lat, poly)) { toRemove.add(pm); pontosRemovidos++; }
+                        if (!estaDentro(lon, lat, poly, bbox)) { toRemove.add(pm); pontosRemovidos++; }
                         continue;
                     }
 
@@ -1144,28 +1170,22 @@ public class KmlMultiTool extends JDialog {
                         if (coordNode == null) { toRemove.add(pm); continue; }
 
                         List<double[]> pts = lerCoordenadas(coordNode.getTextContent());
-                        List<List<double[]>> sublinhas = recortarLinha(pts, poly);
+                        List<List<double[]>> sublinhas = recortarLinha(pts, poly, bbox);
 
                         if (sublinhas.isEmpty()) {
-                            // Linha inteiramente fora — remove
                             toRemove.add(pm);
                         } else if (sublinhas.size() == 1) {
-                            // Linha parcialmente cortada — atualiza coordenadas no lugar
                             coordNode.setTextContent(pontosParaKml(sublinhas.get(0)));
                             linhasRecortadas++;
                         } else {
-                            // Linha dividida em vários trechos — clona o Placemark para cada trecho
                             linhasRecortadas++;
-                            // Atualiza o primeiro trecho no Placemark original
                             coordNode.setTextContent(pontosParaKml(sublinhas.get(0)));
-                            // Cria novos Placemarks para os trechos adicionais
                             Node parent = pm.getParentNode();
                             for (int s = 1; s < sublinhas.size(); s++) {
                                 Node clone = pm.cloneNode(true);
                                 Node cloneCoord = ((Element) clone)
                                         .getElementsByTagName("coordinates").item(0);
                                 cloneCoord.setTextContent(pontosParaKml(sublinhas.get(s)));
-                                // Ajusta o nome para indicar o trecho
                                 Node nameNode = ((Element) clone).getElementsByTagName("name").item(0);
                                 if (nameNode != null)
                                     nameNode.setTextContent(nameNode.getTextContent() + " (" + (s+1) + ")");
