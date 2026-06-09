@@ -1,138 +1,80 @@
 // IMPORTS
 
+import com.formdev.flatlaf.*;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.OutputKeys;
+import javax.xml.transform.*;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.stream.StreamResult;
-import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-import org.w3c.dom.Element;
-import org.w3c.dom.CDATASection;
-import org.w3c.dom.NodeList;
+import org.w3c.dom.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
-import java.util.zip.ZipOutputStream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
-import java.util.ArrayList;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.HashMap;
+import java.util.*;
 import java.util.List;
+import java.util.regex.*;
+import java.util.zip.*;
 
-// CLASSES AUXILIARES (COMPARTILHADAS)
-
-class ColorPreview extends JPanel {
-    private Color color;
-
-    public ColorPreview(String color_hex) {
-        setPreferredSize(new Dimension(24, 24));
-        setBorder(BorderFactory.createLineBorder(Color.GRAY));
-        set_color_from_kml(color_hex);
-    }
-
-    public void set_color_from_kml(String kml_hex) {
-        try {
-            int alpha = Integer.parseInt(kml_hex.substring(0, 2), 16);
-            int blue  = Integer.parseInt(kml_hex.substring(2, 4), 16);
-            int green = Integer.parseInt(kml_hex.substring(4, 6), 16);
-            int red   = Integer.parseInt(kml_hex.substring(6, 8), 16);
-            this.color = new Color(red, green, blue, alpha);
-        } catch (Exception e) {
-            this.color = Color.BLACK;
-        }
-        repaint();
-    }
-
-    public void set_color(Color color) {
-        this.color = color;
-        repaint();
-    }
-
-    public Color getColor() {
-        return this.color;
-    }
-
-    @Override
-    protected void paintComponent(Graphics g) {
-        super.paintComponent(g);
-        if (color != null) {
-            g.setColor(color);
-            g.fillRect(0, 0, getWidth(), getHeight());
-        }
-    }
-}
-
-class StyleListItem {
-    String style_id;
-    String text;
-    String color;
-    String width;
-    Node   node;
-
-    public StyleListItem(String style_id, String text, String color, String width, Node node) {
-        this.style_id = style_id;
-        this.text  = text;
-        this.color = color;
-        this.width = width;
-        this.node  = node;
-    }
-
-    @Override
-    public String toString() {
-        return this.text;
-    }
-}
-
-// CLASSE PRINCIPAL COM NAVEGAÇÃO
+// --- CLASSE PRINCIPAL ---
 
 public class KmlMultiTool extends JFrame {
-
     private CardLayout cardLayout;
-    private JPanel     container;
-
-    private ImageEditorPanel imageEditorPanel;
-    private StateFilterPanel stateFilterPanel;
-    private StyleEditorPanel styleEditorPanel;
-
-    // Botões de navegação — guarda referência para poder destacar o ativo
+    private JPanel container;
     private JButton btnPage1, btnPage2, btnPage3;
+    /** Último diretório visitado — compartilhado entre todas as páginas */
+    static File lastDir = null;
 
-    public KmlMultiTool() {
+    public KmlMultiTool(boolean flatLafDisponivel) {
         setTitle("KML Multi-Ferramenta");
-        setSize(980, 780);
+        configurarIcone();
+        setSize(1125, 800);
         setMinimumSize(new Dimension(800, 600));
         setLocationRelativeTo(null);
 
         cardLayout = new CardLayout();
-        container  = new JPanel(cardLayout);
+        container = new JPanel(cardLayout);
 
-        imageEditorPanel = new ImageEditorPanel();
-        stateFilterPanel = new StateFilterPanel();
-        styleEditorPanel = new StyleEditorPanel();
+        container.add(new ImageEditorPanel(), "page1");
+        container.add(new StateFilterPanel(), "page2");
+        container.add(new StyleEditorPanel(), "page3");
 
-        container.add(imageEditorPanel, "page1");
-        container.add(stateFilterPanel, "page2");
-        container.add(styleEditorPanel, "page3");
-
-        // ---- barra de navegação ----
+        // ---- Barra de Navegação com Toggle de Tema ----
         JPanel navPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 6));
         navPanel.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.LIGHT_GRAY));
 
         btnPage1 = new JButton("🖊  Editor de Balão");
         btnPage2 = new JButton("📍  Filtro por Estado");
         btnPage3 = new JButton("🎨  Editor de Estilos");
-		
+        
+        if (flatLafDisponivel) {
+                    String[] temas = { "Flat Light", "Flat Dark", "Flat IntelliJ", "Flat Darcula" };
+                    JComboBox<String> comboTema = new JComboBox<>(temas);
+                    
+                    // Define o tema inicial
+                    comboTema.setSelectedItem("Flat Dark");
+                    
+                    comboTema.addActionListener(e -> {
+                        String escolha = (String) comboTema.getSelectedItem();
+                        switch (escolha) {
+                            case "Flat Light": FlatLightLaf.setup(); break;
+                            case "Flat Dark": FlatDarkLaf.setup(); break;
+                            case "Flat IntelliJ": com.formdev.flatlaf.FlatIntelliJLaf.setup(); break;
+                            case "Flat Darcula": com.formdev.flatlaf.FlatDarculaLaf.setup(); break;
+                        }
+                        SwingUtilities.updateComponentTreeUI(this);
+                    });
+                    
+                    comboTema.setMaximumSize(new Dimension(120, 30));
+                    navPanel.add(comboTema);
+        } else {
+            System.out.println("Modo de tema desativado por falta da biblioteca.");
+        }
+
         btnPage1.addActionListener(e -> mudarPagina("page1", btnPage1));
         btnPage2.addActionListener(e -> mudarPagina("page2", btnPage2));
         btnPage3.addActionListener(e -> mudarPagina("page3", btnPage3));
@@ -140,21 +82,18 @@ public class KmlMultiTool extends JFrame {
         navPanel.add(btnPage1);
         navPanel.add(btnPage2);
         navPanel.add(btnPage3);
-		
-        add(navPanel,  BorderLayout.NORTH);
-        add(container, BorderLayout.CENTER);
 
+        add(navPanel, BorderLayout.NORTH);
+        add(container, BorderLayout.CENTER);
         mudarPagina("page1", btnPage1);
     }
 
     private void mudarPagina(String nomePagina, JButton ativo) {
         cardLayout.show(container, nomePagina);
-        for (JButton b : new JButton[]{btnPage1, btnPage2, btnPage3}) {
+        for (JButton b : new JButton[]{btnPage1, btnPage2, btnPage3}) 
             b.setFont(b.getFont().deriveFont(b == ativo ? Font.BOLD : Font.PLAIN));
-        }
     }
 
-    // ---- helper: linha de arquivo (label + campo + botão ícone) ----
     private static JPanel fileRow(String label, JTextField field, ActionListener browse) {
         JPanel row = new JPanel(new BorderLayout(6, 0));
         row.setBorder(new EmptyBorder(2, 4, 2, 4));
@@ -163,17 +102,71 @@ public class KmlMultiTool extends JFrame {
         JButton btn = new JButton(UIManager.getIcon("FileView.directoryIcon"));
         btn.setToolTipText("Selecionar arquivo");
         btn.addActionListener(browse);
-        row.add(lbl,   BorderLayout.WEST);
+        // Duplo-clique no campo também abre o seletor
+        field.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() == 2) btn.doClick();
+            }
+        });
+        row.add(lbl, BorderLayout.WEST);
         row.add(field, BorderLayout.CENTER);
-        row.add(btn,   BorderLayout.EAST);
+        row.add(btn, BorderLayout.EAST);
         return row;
     }
 
+    /** Cria JFileChooser já no último diretório usado. */
+    static JFileChooser newChooser(String title, String... exts) {
+        JFileChooser ch = new JFileChooser(lastDir);
+        ch.setDialogTitle(title);
+        if (exts.length > 0)
+            ch.setFileFilter(new FileNameExtensionFilter(
+                    String.join("/", exts).toUpperCase(), exts));
+        return ch;
+    }
+
+    /** Diálogo de abertura — atualiza lastDir e devolve o arquivo ou null. */
+    static File escolherAbrir(Component parent, String title, String... exts) {
+        JFileChooser ch = newChooser(title, exts);
+        if (ch.showOpenDialog(parent) == JFileChooser.APPROVE_OPTION) {
+            lastDir = ch.getSelectedFile().getParentFile();
+            return ch.getSelectedFile();
+        }
+        return null;
+    }
+
+    /** Diálogo de salvamento — atualiza lastDir e devolve o arquivo ou null. */
+    static File escolherSalvar(Component parent, String title, String... exts) {
+        JFileChooser ch = newChooser(title, exts);
+        if (ch.showSaveDialog(parent) == JFileChooser.APPROVE_OPTION) {
+            lastDir = ch.getSelectedFile().getParentFile();
+            return ch.getSelectedFile();
+        }
+        return null;
+    }
+
+    private void configurarIcone() {
+        try {
+            java.net.URL imgURL = getClass().getResource("/KML.png");
+            if (imgURL != null) setIconImage(new javax.swing.ImageIcon(imgURL).getImage());
+        } catch (Exception e) { System.err.println("Ícone não encontrado."); }
+    }
+
     public static void main(String[] args) {
+        boolean flatLafDisponivel = false;
+        try {
+            Class.forName("com.formdev.flatlaf.FlatDarkLaf");
+            FlatDarkLaf.setup();
+            flatLafDisponivel = true;
+        } catch (ClassNotFoundException e) {
+            System.err.println("Aviso: FlatLaf não encontrado. Usando tema padrão do sistema.");
+        }
+
+        final boolean finalFlatLafDisponivel = flatLafDisponivel;
+
         SwingUtilities.invokeLater(() -> {
-            KmlMultiTool dialog = new KmlMultiTool();
-            dialog.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-            dialog.setVisible(true);
+            KmlMultiTool app = new KmlMultiTool(finalFlatLafDisponivel);
+            app.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+            app.setVisible(true);
         });
     }
 
@@ -190,6 +183,9 @@ public class KmlMultiTool extends JFrame {
         private List<JTextField[]> findReplacePairs = new ArrayList<>();
         private Document   doc;
         private List<Node> placemarks = new ArrayList<>();
+        private int        placemarkIndex = 0;
+        private JLabel     lblNavInfo;
+        private JButton    btnNavPrev, btnNavNext;
 
         public ImageEditorPanel() {
             super(new BorderLayout(5, 5));
@@ -259,11 +255,24 @@ public class KmlMultiTool extends JFrame {
         
             // ---- botões ----
             JPanel panelBtns = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 4));
-            JButton btnPreview = new JButton("🔍  Atualizar Preview");
-            btnPreview.addActionListener(e -> atualizarPreview());
+            // Navegação de placemarks
+            btnNavPrev = new JButton("◀");
+            btnNavPrev.setToolTipText("Placemark anterior");
+            btnNavPrev.setEnabled(false);
+            btnNavPrev.addActionListener(e -> navegarPlacemark(-1));
+            lblNavInfo = new JLabel("0 / 0");
+            lblNavInfo.setPreferredSize(new Dimension(80, 24));
+            lblNavInfo.setHorizontalAlignment(SwingConstants.CENTER);
+            btnNavNext = new JButton("▶");
+            btnNavNext.setToolTipText("Próximo placemark");
+            btnNavNext.setEnabled(false);
+            btnNavNext.addActionListener(e -> navegarPlacemark(+1));
             JButton btnExec = new JButton("💾  Executar e Salvar");
             btnExec.addActionListener(e -> executar());
-            panelBtns.add(btnPreview);
+            panelBtns.add(btnNavPrev);
+            panelBtns.add(lblNavInfo);
+            panelBtns.add(btnNavNext);
+            panelBtns.add(Box.createHorizontalStrut(20));
             panelBtns.add(btnExec);
         
             add(panelTop,   BorderLayout.NORTH);
@@ -305,21 +314,17 @@ public class KmlMultiTool extends JFrame {
 
         // ---- seleção de arquivos ----
         private void selecionarEntrada() {
-            JFileChooser ch = new JFileChooser();
-            ch.setDialogTitle("Arquivo KML/KMZ de entrada");
-            ch.setFileFilter(new FileNameExtensionFilter("KML/KMZ", "kml", "kmz"));
-            if (ch.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                txtInput.setText(ch.getSelectedFile().getAbsolutePath());
-                carregarPreview(txtInput.getText());
+            File f = KmlMultiTool.escolherAbrir(this, "Arquivo KML/KMZ de entrada", "kml", "kmz");
+            if (f != null) {
+                txtInput.setText(f.getAbsolutePath());
+                KmlMultiTool.this.setTitle("KML Multi-Ferramenta — " + f.getName());
+                carregarPreview(f.getAbsolutePath());
             }
         }
 
         private void selecionarSaida() {
-            JFileChooser ch = new JFileChooser();
-            ch.setDialogTitle("Arquivo KML/KMZ de saída");
-            ch.setFileFilter(new FileNameExtensionFilter("KML/KMZ", "kml", "kmz"));
-            if (ch.showSaveDialog(this) == JFileChooser.APPROVE_OPTION)
-                txtOutput.setText(ch.getSelectedFile().getAbsolutePath());
+            File f = KmlMultiTool.escolherSalvar(this, "Arquivo KML/KMZ de saída", "kml", "kmz");
+            if (f != null) txtOutput.setText(f.getAbsolutePath());
         }
 
         // ---- carregar / parse KML ----
@@ -341,11 +346,29 @@ public class KmlMultiTool extends JFrame {
                     doc = dbf.newDocumentBuilder().parse(new File(caminho));
                 }
                 buscarPlacemarks(doc.getDocumentElement());
-                if (!placemarks.isEmpty()) atualizarPreview();
+                if (!placemarks.isEmpty()) {
+                    placemarkIndex = 0;
+                    atualizarNavegacao();
+                    atualizarPreview();
+                }
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this,
                         "Erro ao carregar arquivo:\n" + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
             }
+        }
+
+        private void navegarPlacemark(int delta) {
+            if (placemarks.isEmpty()) return;
+            placemarkIndex = Math.max(0, Math.min(placemarks.size() - 1, placemarkIndex + delta));
+            atualizarNavegacao();
+            atualizarPreview();
+        }
+
+        private void atualizarNavegacao() {
+            int total = placemarks.size();
+            lblNavInfo.setText((placemarkIndex + 1) + " / " + total);
+            btnNavPrev.setEnabled(placemarkIndex > 0);
+            btnNavNext.setEnabled(placemarkIndex < total - 1);
         }
 
         private void buscarPlacemarks(Node node) {
@@ -361,7 +384,7 @@ public class KmlMultiTool extends JFrame {
                 preview.setText("<html><body><p>Nenhum Placemark encontrado ou arquivo não carregado.</p></body></html>");
                 return;
             }
-            Node pm = placemarks.get(0);
+            Node pm = placemarks.get(placemarkIndex);
             Node nameNode = ((Element) pm).getElementsByTagName("name").item(0);
             String nameText = (nameNode != null) ? nameNode.getTextContent() : "";
             NodeList descNodes = ((Element) pm).getElementsByTagName("description");
@@ -442,6 +465,14 @@ public class KmlMultiTool extends JFrame {
         private void addImageLinkPair() {
             JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
             JTextField imgF = new JTextField(18), linkF = new JTextField(18);
+            // Preview ao vivo ao digitar
+            javax.swing.event.DocumentListener liveDL = new javax.swing.event.DocumentListener() {
+                public void insertUpdate(javax.swing.event.DocumentEvent e) { atualizarPreview(); }
+                public void removeUpdate(javax.swing.event.DocumentEvent e) { atualizarPreview(); }
+                public void changedUpdate(javax.swing.event.DocumentEvent e) {}
+            };
+            imgF.getDocument().addDocumentListener(liveDL);
+            linkF.getDocument().addDocumentListener(liveDL);
             row.add(new JLabel("URL da Imagem:")); row.add(imgF);
             row.add(new JLabel("Hiperlink:"));     row.add(linkF);
             JButton rem = new JButton("−");
@@ -458,6 +489,14 @@ public class KmlMultiTool extends JFrame {
         private void addFindReplacePair() {
             JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
             JTextField findF = new JTextField(14), replF = new JTextField(14);
+            // Preview ao vivo ao digitar
+            javax.swing.event.DocumentListener liveDL = new javax.swing.event.DocumentListener() {
+                public void insertUpdate(javax.swing.event.DocumentEvent e) { atualizarPreview(); }
+                public void removeUpdate(javax.swing.event.DocumentEvent e) { atualizarPreview(); }
+                public void changedUpdate(javax.swing.event.DocumentEvent e) {}
+            };
+            findF.getDocument().addDocumentListener(liveDL);
+            replF.getDocument().addDocumentListener(liveDL);
             row.add(new JLabel("Buscar chave/valor:")); row.add(findF);
             row.add(new JLabel("Substituir por:")); row.add(replF);
             JButton rem = new JButton("−");
@@ -558,9 +597,11 @@ public class KmlMultiTool extends JFrame {
         private JTextField txtInput, txtOutput;
         private JTextArea  txtPolygon;
         private JComboBox<String> comboEstado;
-        private JButton    btnBuscar, btnProcessar;
-        private JLabel     statusLabel;
-        private Document   doc;
+        private JButton      btnBuscar, btnProcessar;
+        private JLabel       statusLabel;
+        private JProgressBar progressBar;
+        private JSpinner     spinBuffer;
+        private Document     doc;
 
         // Estados brasileiros — nome exato para o Nominatim
         private static final String[] ESTADOS_BR = {
@@ -596,13 +637,35 @@ public class KmlMultiTool extends JFrame {
             add(split, BorderLayout.CENTER);
 
             // ---- rodapé ----
-            JPanel footer = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 4));
-            statusLabel = new JLabel(" ");
-            statusLabel.setForeground(new Color(0, 100, 0));
+            JPanel footer = new JPanel();
+            footer.setLayout(new BoxLayout(footer, BoxLayout.Y_AXIS));
+
+            // linha 1: buffer + botão
+            JPanel footerTop = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 4));
+            footerTop.add(new JLabel("Buffer de margem (km):"));
+            spinBuffer = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 500.0, 0.5));
+            ((JSpinner.DefaultEditor) spinBuffer.getEditor()).getTextField().setColumns(5);
+            spinBuffer.setToolTipText("<html>Expande o polígono em X km para incluir<br>"
+                    + "pontos próximos à borda do estado.</html>");
+            footerTop.add(spinBuffer);
+            footerTop.add(Box.createHorizontalStrut(20));
             btnProcessar = new JButton("▶  Filtrar e Salvar");
             btnProcessar.addActionListener(e -> processarEFiltrar());
-            footer.add(btnProcessar);
-            footer.add(statusLabel);
+            footerTop.add(btnProcessar);
+            footer.add(footerTop);
+
+            // linha 2: barra de progresso + status
+            JPanel footerBot = new JPanel(new BorderLayout(6, 0));
+            footerBot.setBorder(new EmptyBorder(0, 8, 4, 8));
+            progressBar = new JProgressBar(0, 100);
+            progressBar.setStringPainted(true);
+            progressBar.setString("");
+            progressBar.setPreferredSize(new Dimension(200, 18));
+            statusLabel = new JLabel(" ");
+            footerBot.add(progressBar, BorderLayout.WEST);
+            footerBot.add(statusLabel, BorderLayout.CENTER);
+            footer.add(footerBot);
+
             add(footer, BorderLayout.SOUTH);
         }
 
@@ -810,15 +873,12 @@ public class KmlMultiTool extends JFrame {
 
         // ---- carregar polígono de KML/KMZ ----
         private void carregarPoligonoKML() {
-            JFileChooser ch = new JFileChooser();
-            ch.setDialogTitle("KML/KMZ com polígono");
-            ch.setFileFilter(new FileNameExtensionFilter("KML/KMZ", "kml", "kmz"));
-            if (ch.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+            File file = KmlMultiTool.escolherAbrir(this, "KML/KMZ com polígono", "kml", "kmz");
+            if (file == null) return;
 
             try {
                 DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
                 Document polygonDoc;
-                File file = ch.getSelectedFile();
                 if (file.getName().toLowerCase().endsWith(".kmz")) {
                     try (ZipFile zf = new ZipFile(file)) {
                         ZipEntry entry = zf.getEntry("doc.kml");
@@ -856,19 +916,13 @@ public class KmlMultiTool extends JFrame {
 
         // ---- seleção de arquivos ----
         private void selecionarEntrada() {
-            JFileChooser ch = new JFileChooser();
-            ch.setDialogTitle("Arquivo de entrada KML/KMZ");
-            ch.setFileFilter(new FileNameExtensionFilter("KML/KMZ", "kml", "kmz"));
-            if (ch.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
-                txtInput.setText(ch.getSelectedFile().getAbsolutePath());
+            File f = KmlMultiTool.escolherAbrir(this, "Arquivo de entrada KML/KMZ", "kml", "kmz");
+            if (f != null) txtInput.setText(f.getAbsolutePath());
         }
 
         private void selecionarSaida() {
-            JFileChooser ch = new JFileChooser();
-            ch.setDialogTitle("Arquivo de saída KML/KMZ");
-            ch.setFileFilter(new FileNameExtensionFilter("KML/KMZ", "kml", "kmz"));
-            if (ch.showSaveDialog(this) == JFileChooser.APPROVE_OPTION)
-                txtOutput.setText(ch.getSelectedFile().getAbsolutePath());
+            File f = KmlMultiTool.escolherSalvar(this, "Arquivo de saída KML/KMZ", "kml", "kmz");
+            if (f != null) txtOutput.setText(f.getAbsolutePath());
         }
 
         // ALGORITMO RAMER-DOUGLAS-PEUCKER (SIMPLIFICAÇÃO DE POLÍGONO)
@@ -1117,105 +1171,160 @@ public class KmlMultiTool extends JFrame {
                         "Erro", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            try {
-                DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-                if (inputPath.toLowerCase().endsWith(".kmz")) {
-                    try (ZipFile zf = new ZipFile(new File(inputPath))) {
-                        ZipEntry entry = zf.getEntry("doc.kml");
-                        if (entry == null) entry = zf.getEntry("document.kml");
-                        if (entry == null) throw new IOException("KMZ sem 'doc.kml'.");
-                        try (InputStream is = zf.getInputStream(entry)) {
-                            doc = dbf.newDocumentBuilder().parse(is);
-                        }
-                    }
-                } else {
-                    doc = dbf.newDocumentBuilder().parse(new File(inputPath));
-                }
+            // Aplica buffer de margem (converte km → graus, ~111 km por grau)
+            double bufferKm = ((Number) spinBuffer.getValue()).doubleValue();
+            final double[][] polyFinal = (bufferKm > 0) ? aplicarBuffer(poly, bufferKm / 111.0) : poly;
 
-                // Calcula bbox uma vez — evita recalcular para cada ponto
-                double[] bbox = calcBbox(poly);
+            btnProcessar.setEnabled(false);
+            progressBar.setValue(0);
+            progressBar.setString("Carregando...");
+            statusLabel.setText("");
 
-                // Snapshot do NodeList em uma lista estática (NodeList é "live" no DOM —
-                // se removermos nós durante a iteração, os índices se deslocam e pulamos elementos)
-                List<Node> toRemove = new ArrayList<>();
-                NodeList pmsLive = doc.getElementsByTagName("Placemark");
-                List<Node> allPms = new ArrayList<>();
-                for (int i = 0; i < pmsLive.getLength(); i++) allPms.add(pmsLive.item(i));
-
-                int total = allPms.size();
-                int totalPontos = 0, totalLinhas = 0;
-                int pontosRemovidos = 0, linhasRecortadas = 0;
-
-                for (Node pm : allPms) {
-                    Element pmEl = (Element) pm;
-
-                    // ---- PONTO ----
-                    Node pointNode = pmEl.getElementsByTagName("Point").item(0);
-                    if (pointNode != null) {
-                        totalPontos++;
-                        Node coordNode = ((Element) pointNode).getElementsByTagName("coordinates").item(0);
-                        if (coordNode == null) { toRemove.add(pm); pontosRemovidos++; continue; }
-                        String[] parts = coordNode.getTextContent().trim().split(",");
-                        double lon = Double.parseDouble(parts[0]);
-                        double lat = Double.parseDouble(parts[1]);
-                        if (!estaDentro(lon, lat, poly, bbox)) { toRemove.add(pm); pontosRemovidos++; }
-                        continue;
-                    }
-
-                    // ---- LINESTRING ----
-                    Node lineNode = pmEl.getElementsByTagName("LineString").item(0);
-                    if (lineNode != null) {
-                        totalLinhas++;
-                        Node coordNode = ((Element) lineNode).getElementsByTagName("coordinates").item(0);
-                        if (coordNode == null) { toRemove.add(pm); continue; }
-
-                        List<double[]> pts = lerCoordenadas(coordNode.getTextContent());
-                        List<List<double[]>> sublinhas = recortarLinha(pts, poly, bbox);
-
-                        if (sublinhas.isEmpty()) {
-                            toRemove.add(pm);
-                        } else if (sublinhas.size() == 1) {
-                            coordNode.setTextContent(pontosParaKml(sublinhas.get(0)));
-                            linhasRecortadas++;
-                        } else {
-                            linhasRecortadas++;
-                            coordNode.setTextContent(pontosParaKml(sublinhas.get(0)));
-                            Node parent = pm.getParentNode();
-                            for (int s = 1; s < sublinhas.size(); s++) {
-                                Node clone = pm.cloneNode(true);
-                                Node cloneCoord = ((Element) clone)
-                                        .getElementsByTagName("coordinates").item(0);
-                                cloneCoord.setTextContent(pontosParaKml(sublinhas.get(s)));
-                                Node nameNode = ((Element) clone).getElementsByTagName("name").item(0);
-                                if (nameNode != null)
-                                    nameNode.setTextContent(nameNode.getTextContent() + " (" + (s+1) + ")");
-                                parent.insertBefore(clone, pm.getNextSibling());
+            new SwingWorker<String, Integer>() {
+                @Override
+                protected String doInBackground() throws Exception {
+                    DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+                    dbf.setValidating(false);
+                    dbf.setExpandEntityReferences(false);
+                    try {
+                        dbf.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+                        dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+                        dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+                    } catch (Exception _f) {}
+                    Document docLocal;
+                    if (inputPath.toLowerCase().endsWith(".kmz")) {
+                        try (ZipFile zf = new ZipFile(new File(inputPath))) {
+                            ZipEntry entry = zf.getEntry("doc.kml");
+                            if (entry == null) entry = zf.getEntry("document.kml");
+                            if (entry == null) throw new IOException("KMZ sem doc.kml.");
+                            try (InputStream is = zf.getInputStream(entry)) {
+                                docLocal = dbf.newDocumentBuilder().parse(is);
                             }
                         }
-                        continue;
+                    } else {
+                        docLocal = dbf.newDocumentBuilder().parse(new File(inputPath));
                     }
+                    publish(-1); // sinal: arquivo carregado, iniciando filtro
 
-                    // ---- OUTROS (Polygon, MultiGeometry, etc.) ----
+                    double[] bbox = calcBbox(polyFinal);
+                    List<Node> toRemove = new ArrayList<>();
+                    NodeList pmsLive = docLocal.getElementsByTagName("Placemark");
+                    List<Node> allPms = new ArrayList<>();
+                    for (int i = 0; i < pmsLive.getLength(); i++) allPms.add(pmsLive.item(i));
+                    int total = allPms.size();
+                    int totalPontos = 0, totalLinhas = 0, pontosRemovidos = 0, linhasRecortadas = 0;
+                    for (int idx = 0; idx < total; idx++) {
+                        Node pm = allPms.get(idx);
+                        Element pmEl = (Element) pm;
+                        // Publica progresso a cada 1%
+                        int pct = (int) ((idx + 1) * 100.0 / total);
+                        if (idx == 0 || pct > (int)(idx * 100.0 / total)) publish(pct);
+
+                        Node pointNode = pmEl.getElementsByTagName("Point").item(0);
+                        if (pointNode != null) {
+                            totalPontos++;
+                            Node coordNode = ((Element) pointNode).getElementsByTagName("coordinates").item(0);
+                            if (coordNode == null) { toRemove.add(pm); pontosRemovidos++; continue; }
+                            String[] parts = coordNode.getTextContent().trim().split(",");
+                            double lon = Double.parseDouble(parts[0]);
+                            double lat = Double.parseDouble(parts[1]);
+                            if (!estaDentro(lon, lat, polyFinal, bbox)) { toRemove.add(pm); pontosRemovidos++; }
+                            continue;
+                        }
+                        Node lineNode = pmEl.getElementsByTagName("LineString").item(0);
+                        if (lineNode != null) {
+                            totalLinhas++;
+                            Node coordNode = ((Element) lineNode).getElementsByTagName("coordinates").item(0);
+                            if (coordNode == null) { toRemove.add(pm); continue; }
+                            List<double[]> pts = lerCoordenadas(coordNode.getTextContent());
+                            List<List<double[]>> sublinhas = recortarLinha(pts, polyFinal, bbox);
+                            if (sublinhas.isEmpty()) {
+                                toRemove.add(pm);
+                            } else if (sublinhas.size() == 1) {
+                                coordNode.setTextContent(pontosParaKml(sublinhas.get(0)));
+                                linhasRecortadas++;
+                            } else {
+                                linhasRecortadas++;
+                                coordNode.setTextContent(pontosParaKml(sublinhas.get(0)));
+                                Node parent = pm.getParentNode();
+                                for (int s = 1; s < sublinhas.size(); s++) {
+                                    Node clone = pm.cloneNode(true);
+                                    Node cloneCoord = ((Element) clone).getElementsByTagName("coordinates").item(0);
+                                    cloneCoord.setTextContent(pontosParaKml(sublinhas.get(s)));
+                                    Node nameNode = ((Element) clone).getElementsByTagName("name").item(0);
+                                    if (nameNode != null)
+                                        nameNode.setTextContent(nameNode.getTextContent() + " (" + (s+1) + ")");
+                                    parent.insertBefore(clone, pm.getNextSibling());
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                    for (Node n : toRemove) n.getParentNode().removeChild(n);
+                    salvarDoc(docLocal, outputPath);
+                    int keptPontos = totalPontos - pontosRemovidos;
+                    return "Filtro aplicado!\n"
+                            + keptPontos + " de " + totalPontos + " pontos mantidos.\n"
+                            + totalLinhas + " linhas processadas"
+                            + (linhasRecortadas > 0 ? " (" + linhasRecortadas + " recortadas)." : ".") + "\n"
+                            + (bufferKm > 0 ? "Buffer aplicado: " + bufferKm + " km.\n" : "")
+                            + "Salvo em: " + outputPath
+                            + "|||" + keptPontos + "/" + totalPontos
+                            + "  |  Linhas: " + totalLinhas
+                            + (linhasRecortadas > 0 ? " (" + linhasRecortadas + " recortadas)" : "");
                 }
+                @Override
+                protected void process(List<Integer> chunks) {
+                    int last = chunks.get(chunks.size() - 1);
+                    if (last == -1) {
+                        progressBar.setString("Filtrando...");
+                    } else {
+                        progressBar.setValue(last);
+                        progressBar.setString(last + "%");
+                    }
+                }
+                @Override
+                protected void done() {
+                    btnProcessar.setEnabled(true);
+                    progressBar.setValue(100);
+                    try {
+                        String result = get();
+                        String[] parts = result.split("\\|\\|\\|");
+                        String msg    = parts[0];
+                        String status = parts.length > 1 ? parts[1] : "";
+                        progressBar.setString("Concluído");
+                        statusLabel.setText("✅ " + status);
+                        JOptionPane.showMessageDialog(StateFilterPanel.this, msg, "Sucesso", JOptionPane.INFORMATION_MESSAGE);
+                    } catch (Exception ex) {
+                        progressBar.setString("Erro");
+                        statusLabel.setText("❌ " + ex.getMessage());
+                        JOptionPane.showMessageDialog(StateFilterPanel.this,
+                                "Erro ao processar:\n" + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            }.execute();
+        }
 
-                for (Node n : toRemove) n.getParentNode().removeChild(n);
-
-                salvarDoc(doc, outputPath);
-
-                int keptPontos = totalPontos - pontosRemovidos;
-                String msg = "Filtro aplicado!\n"
-                        + keptPontos + " de " + totalPontos + " pontos mantidos.\n"
-                        + totalLinhas + " linhas processadas"
-                        + (linhasRecortadas > 0 ? " (" + linhasRecortadas + " recortadas no limite)." : ".") + "\n"
-                        + "Salvo em: " + outputPath;
-                statusLabel.setText("\u2705 Pontos: " + keptPontos + "/" + totalPontos
-                        + "  |  Linhas: " + totalLinhas
-                        + (linhasRecortadas > 0 ? " (" + linhasRecortadas + " recortadas)" : ""));
-                JOptionPane.showMessageDialog(this, msg, "Sucesso", JOptionPane.INFORMATION_MESSAGE);
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this,
-                        "Erro ao processar:\n" + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+        /**
+         * Expande cada vértice do polígono radialmente por deltaGraus.
+         * Equivale a um buffer circular uniforme em coordenadas geográficas.
+         */
+        private double[][] aplicarBuffer(double[][] poly, double deltaGraus) {
+            int n = poly.length;
+            // Calcula centróide
+            double cx = 0, cy = 0;
+            for (double[] p : poly) { cx += p[0]; cy += p[1]; }
+            cx /= n; cy /= n;
+            double[][] resultado = new double[n][2];
+            for (int i = 0; i < n; i++) {
+                double dx = poly[i][0] - cx, dy = poly[i][1] - cy;
+                double dist = Math.sqrt(dx*dx + dy*dy);
+                if (dist < 1e-10) { resultado[i] = poly[i].clone(); continue; }
+                // Move o vértice para longe do centróide por deltaGraus
+                resultado[i][0] = poly[i][0] + dx / dist * deltaGraus;
+                resultado[i][1] = poly[i][1] + dy / dist * deltaGraus;
             }
+            return resultado;
         }
     }
 
@@ -1233,166 +1342,289 @@ public class KmlMultiTool extends JFrame {
         private JTable     valuesTable;
         private Document   doc;
         private StyleListItem activeStyleItem;
-        private HashMap<String, ArrayList<Node>> valueNodesMap = new HashMap<>();
+        private LinkedHashMap<String, ArrayList<Node>> valueNodesMap = new LinkedHashMap<>();
+        private JLabel     statusLabel;
+        private JButton    btnSalvar;
+        private JButton    btnLoad;
+        private JCheckBox  checkConsolidarExtras;
 
         public StyleEditorPanel() {
             super(new BorderLayout(0, 4));
             setBorder(new EmptyBorder(6, 8, 6, 8));
-
+        
             // ---- arquivos ----
             JPanel filePanel = new JPanel();
             filePanel.setLayout(new BoxLayout(filePanel, BoxLayout.Y_AXIS));
-            txtInput  = new JTextField();
+            txtInput = new JTextField();
             txtOutput = new JTextField();
-            filePanel.add(fileRow("Arquivo de entrada (KML/KMZ):", txtInput,  e -> selecionarEntrada()));
-            filePanel.add(fileRow("Arquivo de saída (KML/KMZ):",  txtOutput, e -> selecionarSaida()));
+            filePanel.add(fileRow("Arquivo de entrada (KML/KMZ):", txtInput, e -> selecionarEntrada()));
+            filePanel.add(fileRow("Arquivo de saída (KML/KMZ):", txtOutput, e -> selecionarSaida()));
+            statusLabel = new JLabel(" Selecione um arquivo de entrada para começar.");
+            statusLabel.setBorder(new EmptyBorder(2, 6, 2, 6));
+            statusLabel.setFont(statusLabel.getFont().deriveFont(Font.ITALIC, 11f));
+            filePanel.add(statusLabel);
             add(filePanel, BorderLayout.NORTH);
-
+        
             // ---- painel principal split ----
             JSplitPane mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
-            mainSplit.setResizeWeight(0.40);
-
-            // ---- esquerda: lista de estilos ----
+            mainSplit.setResizeWeight(0.30);
+            mainSplit.setDividerLocation(575);
+            mainSplit.setContinuousLayout(true);   // ← melhora visual durante resize
+        
+            // ==== ESQUERDA: Estilos ====
             JPanel stylePanel = new JPanel(new BorderLayout(0, 4));
             stylePanel.setBorder(BorderFactory.createTitledBorder("Estilos de Linha"));
-
+        
             styleListModel = new DefaultListModel<>();
-            styleList      = new JList<>(styleListModel);
+            styleList = new JList<>(styleListModel);
+            styleList.setFont(new Font("Monospaced", Font.PLAIN, 12));
             styleList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
             styleList.addListSelectionListener(e -> { if (!e.getValueIsAdjusting()) onStyleSelected(); });
+        
             stylePanel.add(new JScrollPane(styleList), BorderLayout.CENTER);
-
+        
+            // --- Controles de edição (3 linhas mais resistentes) ---
             JPanel editControls = new JPanel();
             editControls.setLayout(new BoxLayout(editControls, BoxLayout.Y_AXIS));
-            editControls.setBorder(new EmptyBorder(4, 4, 4, 4));
-
-            // cor
-            JPanel colorRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+            editControls.setBorder(new EmptyBorder(6, 6, 6, 6));
+        
+            // Linha 1: Cor + Espessura
+            JPanel row1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
             colorPreview = new ColorPreview("ff000000");
             JButton btnMudarCor = new JButton("Mudar Cor...");
             btnMudarCor.addActionListener(e -> mudarCor());
-            colorRow.add(btnMudarCor);
-            colorRow.add(colorPreview);
-            editControls.add(colorRow);
-
-            // espessura
-            JPanel widthRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
-            widthSlider = new JSlider(1, 10, 1);
+        
+            row1.add(btnMudarCor);
+            row1.add(colorPreview);
+            row1.add(Box.createHorizontalStrut(12));
+            row1.add(new JLabel("Espessura:"));
+            widthSlider = new JSlider(1, 5, 1);
+            widthSlider.setPaintLabels(true);
             widthSlider.setPaintTicks(true);
             widthSlider.setMajorTickSpacing(1);
             widthSlider.setSnapToTicks(true);
-            widthSlider.addChangeListener(e -> mudarEspessura());
-            widthLabel = new JLabel("Espessura: 1");
-            widthRow.add(new JLabel("Espessura:"));
-            widthRow.add(widthSlider);
-            widthRow.add(widthLabel);
-            editControls.add(widthRow);
-
+            widthSlider.setPreferredSize(new Dimension(150, 50));
+            widthSlider.addChangeListener(e -> {
+            if (activeStyleItem == null) {
+                widthLabel.setText("Espessura:");
+                return;
+            }
+        
+            try {
+                double atual = Double.parseDouble(activeStyleItem.width);
+                int novo = widthSlider.getValue();
+        
+                if (novo == (int)Math.round(atual))
+                    widthLabel.setText("Esp: " + atual);
+                else
+                    widthLabel.setText("Esp: " + atual + " → " + novo);
+        
+            } catch (Exception ex) {
+                widthLabel.setText("Esp: " + widthSlider.getValue());
+            }
+        });
+        
+            widthLabel = new JLabel("Espessura:");
+            widthLabel.setPreferredSize(new Dimension(75, 20));
+        
+            row1.add(widthSlider);
+            JButton btnRenomear = new JButton("Renomear IDs");
+            btnRenomear.setToolTipText(
+                "<html>Substitui IDs numéricos por nomes legíveis<br>" +
+                "baseados na cor e espessura.</html>"
+            );
+            btnRenomear.addActionListener(e -> renomearIdSelecionado());
+            
+            row1.add(Box.createHorizontalStrut(8));
+            row1.add(btnRenomear);
+            editControls.add(row1);
+        
+            // Linha 2: reserva
+            JPanel row2 = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+            editControls.add(row2);
+        
+            // Linha 3: Organização
+            JPanel row3 = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+            JButton btnConsolidar = new JButton("🔗 Consolidar Duplicados");
+            btnConsolidar.setToolTipText("Agrupa Styles com mesmos valores e atualiza todos os styleUrl");
+            btnConsolidar.addActionListener(e -> consolidarEstilos());
+        
+            JButton btnRemoverSemUso = new JButton("🗑 Remover Sem Uso");
+            btnRemoverSemUso.setToolTipText("Remove Styles não referenciados por nenhum Placemark");
+            btnRemoverSemUso.addActionListener(e -> removerStylesSemUso());
+        
+            checkConsolidarExtras = new JCheckBox("Incluir PolyStyle/IconStyle");
+            checkConsolidarExtras.setToolTipText("<html>Marcado: considera PolyStyle e IconStyle na comparação.<br>Desmarcado: compara apenas Cor e Espessura da linha.</html>");
+        
+            row3.add(btnConsolidar);
+            row3.add(btnRemoverSemUso);
+            row3.add(Box.createHorizontalStrut(8));
+            row3.add(checkConsolidarExtras);
+            editControls.add(row3);
+        
             stylePanel.add(editControls, BorderLayout.SOUTH);
             mainSplit.setLeftComponent(stylePanel);
-
-            // ---- direita: valores de balão ----
+        
+            // DIREITA: Valores de Balão
             JPanel balloonPanel = new JPanel(new BorderLayout(0, 4));
             balloonPanel.setBorder(BorderFactory.createTitledBorder("Editar Valores de Balão (únicos por chave)"));
-
-            JPanel balloonTop = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
-            balloonTop.add(new JLabel("Chave (ex: Tensão):"));
-            txtKey = new JTextField(20);
-            balloonTop.add(txtKey);
-            JButton btnLoad = new JButton("🔍  Carregar Valores");
+        
+            // Topo mais resiliente ao redimensionamento
+            JPanel balloonTop = new JPanel(new BorderLayout(6, 0));
+            balloonTop.setBorder(new EmptyBorder(4, 4, 4, 4));
+        
+            JPanel leftTop = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+            leftTop.add(new JLabel("Chave (ex: Tensão):"));
+            txtKey = new JTextField(14);
+            txtKey.addActionListener(e -> carregarValoresBalao());
+            leftTop.add(txtKey);
+        
+            JPanel rightTop = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
+            btnLoad = new JButton("Carregar Valores");
             btnLoad.addActionListener(e -> carregarValoresBalao());
-            balloonTop.add(btnLoad);
+            rightTop.add(btnLoad);
+        
+            balloonTop.add(leftTop, BorderLayout.WEST);
+            balloonTop.add(rightTop, BorderLayout.EAST);
+        
             balloonPanel.add(balloonTop, BorderLayout.NORTH);
-
-            tableModel  = new DefaultTableModel(new String[]{"Valor único"}, 0);
+        
+            tableModel = new DefaultTableModel(new String[]{"Valor único", "Ocorrências"}, 0) {
+                @Override public boolean isCellEditable(int row, int col) { return col == 0; }
+                @Override public Class<?> getColumnClass(int col) { return col == 1 ? Integer.class : String.class; }
+            };
             valuesTable = new JTable(tableModel);
             valuesTable.setAutoCreateRowSorter(true);
+            valuesTable.getColumnModel().getColumn(1).setPreferredWidth(90);
+            valuesTable.getColumnModel().getColumn(1).setMaxWidth(110);
+        
             balloonPanel.add(new JScrollPane(valuesTable), BorderLayout.CENTER);
-
+        
             mainSplit.setRightComponent(balloonPanel);
             add(mainSplit, BorderLayout.CENTER);
-
+        
             // ---- rodapé ----
             JPanel footer = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 4));
-            JButton btnCarregar = new JButton("📂  Carregar KML");
-            btnCarregar.addActionListener(e -> carregarKml());
-            JButton btnSalvar = new JButton("💾  Salvar Alterações");
+            btnSalvar = new JButton("💾 Salvar Alterações");
+            btnSalvar.setEnabled(false);
             btnSalvar.addActionListener(e -> salvarAlteracoes());
-            footer.add(btnCarregar);
             footer.add(btnSalvar);
             add(footer, BorderLayout.SOUTH);
         }
 
         private void selecionarEntrada() {
-            JFileChooser ch = new JFileChooser();
-            ch.setFileFilter(new FileNameExtensionFilter("KML/KMZ", "kml", "kmz"));
-            if (ch.showOpenDialog(this) == JFileChooser.APPROVE_OPTION)
-                txtInput.setText(ch.getSelectedFile().getAbsolutePath());
+            File f = KmlMultiTool.escolherAbrir(this, "Arquivo de entrada KML/KMZ", "kml", "kmz");
+            if (f != null) {
+                txtInput.setText(f.getAbsolutePath());
+                carregarKml(f.getAbsolutePath());
+            }
         }
 
         private void selecionarSaida() {
-            JFileChooser ch = new JFileChooser();
-            ch.setFileFilter(new FileNameExtensionFilter("KML/KMZ", "kml", "kmz"));
-            if (ch.showSaveDialog(this) == JFileChooser.APPROVE_OPTION)
-                txtOutput.setText(ch.getSelectedFile().getAbsolutePath());
+            File f = KmlMultiTool.escolherSalvar(this, "Arquivo de saída KML/KMZ", "kml", "kmz");
+            if (f != null) txtOutput.setText(f.getAbsolutePath());
         }
 
-        private void carregarKml() {
-            String path = txtInput.getText();
-            if (path.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Selecione um arquivo de entrada.", "Atenção", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            try {
-                DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-                if (path.toLowerCase().endsWith(".kmz")) {
-                    try (ZipFile zf = new ZipFile(new File(path))) {
-                        ZipEntry entry = zf.getEntry("doc.kml");
-                        if (entry == null) entry = zf.getEntry("document.kml");
-                        try (InputStream is = zf.getInputStream(entry)) {
-                            doc = dbf.newDocumentBuilder().parse(is);
+        private void carregarKml(String path) {
+            if (path == null || path.isEmpty()) return;
+            statusLabel.setText("⏳ Carregando " + new File(path).getName() + "...");
+            btnSalvar.setEnabled(false);
+            styleListModel.clear();
+            tableModel.setRowCount(0);
+
+            new SwingWorker<Document, Void>() {
+                @Override
+                protected Document doInBackground() throws Exception {
+                    DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+                    if (path.toLowerCase().endsWith(".kmz")) {
+                        try (ZipFile zf = new ZipFile(new File(path))) {
+                            ZipEntry entry = zf.getEntry("doc.kml");
+                            if (entry == null) entry = zf.getEntry("document.kml");
+                            if (entry == null) throw new IOException("KMZ sem 'doc.kml'.");
+                            try (InputStream is = zf.getInputStream(entry)) {
+                                return dbf.newDocumentBuilder().parse(is);
+                            }
                         }
+                    } else {
+                        return dbf.newDocumentBuilder().parse(new File(path));
                     }
-                } else {
-                    doc = dbf.newDocumentBuilder().parse(new File(path));
                 }
-                listarEstilos();
-                if (!txtKey.getText().trim().isEmpty()) carregarValoresBalao();
-                JOptionPane.showMessageDialog(this, "Arquivo carregado com sucesso!", "Sucesso", JOptionPane.INFORMATION_MESSAGE);
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this, "Erro ao carregar:\n" + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
-            }
+
+                @Override
+                protected void done() {
+                    try {
+                        doc = get();
+                        listarEstilos();
+                        //if (!txtKey.getText().trim().isEmpty()) carregarValoresBalao(); // busca automaticamente
+                        int n = styleListModel.getSize();
+                        statusLabel.setText("✅ " + new File(path).getName()
+                                + " — " + n + " estilo(s) de linha encontrado(s).");
+                        btnSalvar.setEnabled(true);
+                    } catch (Exception ex) {
+                        doc = null;
+                        statusLabel.setText("❌ Erro: " + ex.getMessage());
+                        JOptionPane.showMessageDialog(StyleEditorPanel.this,
+                                "Erro ao carregar:\n" + ex.getMessage(),
+                                "Erro", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            }.execute();
         }
 
         private void listarEstilos() {
             styleListModel.clear();
             if (doc == null) return;
+        
+            // 1. Mapeia todos os Style URLs usados pelos Placemarks
+            Map<String, Integer> styleUsageMap = new HashMap<>();
+            NodeList styleUrls = doc.getElementsByTagName("styleUrl");
+            for (int i = 0; i < styleUrls.getLength(); i++) {
+                String url = styleUrls.item(i).getTextContent().replace("#", "");
+                styleUsageMap.put(url, styleUsageMap.getOrDefault(url, 0) + 1);
+            }
+        
+            // 2. Lista os estilos e associa a contagem
             NodeList styles = doc.getElementsByTagName("Style");
             for (int i = 0; i < styles.getLength(); i++) {
                 Element styleEl = (Element) styles.item(i);
                 String id = styleEl.getAttribute("id");
                 NodeList ls = styleEl.getElementsByTagName("LineStyle");
                 if (ls.getLength() == 0) continue;
+        
                 Element lineStyle = (Element) ls.item(0);
                 Node cNode = lineStyle.getElementsByTagName("color").item(0);
                 Node wNode = lineStyle.getElementsByTagName("width").item(0);
+                
                 String cor = (cNode != null) ? cNode.getTextContent() : "N/D";
                 String esp = (wNode != null) ? wNode.getTextContent() : "N/D";
-                styleListModel.addElement(new StyleListItem(id,
-                        "ID: " + id + "  |  Cor: " + cor + "  |  Espessura: " + esp,
-                        cor, esp, lineStyle));
+                int uso = styleUsageMap.getOrDefault(id, 0);
+        
+                styleListModel.addElement(new StyleListItem(id, "", cor, esp, lineStyle, uso));
             }
         }
 
         private void onStyleSelected() {
-            int idx = styleList.getSelectedIndex();
-            if (idx < 0) return;
-            activeStyleItem = styleListModel.getElementAt(idx);
-            colorPreview.set_color_from_kml(activeStyleItem.color);
+            List<StyleListItem> sel = styleList.getSelectedValuesList();
+            if (sel.isEmpty()) {
+                activeStyleItem = null;
+                widthLabel.setText("Espessura:");
+                return;
+            }
+            activeStyleItem = sel.get(0);
+            if (sel.size() > 1) {
+                widthLabel.setText(sel.size() + " selecionados — clique Aplicar a Seleção");
+                return;
+            }
+            // seleção única: atualiza cor e slider
+            if (activeStyleItem.color != null && !"N/D".equals(activeStyleItem.color))
+                colorPreview.set_color_from_kml(activeStyleItem.color);
             try {
                 double w = Double.parseDouble(activeStyleItem.width);
-                widthSlider.setValue((int) w);
-                widthLabel.setText("Espessura: " + (int) w);
+                for (javax.swing.event.ChangeListener cl : widthSlider.getChangeListeners())
+                    widthSlider.removeChangeListener(cl);
+                widthSlider.setValue(Math.min(10, Math.max(1, (int) Math.round(w))));
+                widthLabel.setText("Espessura: " + w);
+                widthSlider.addChangeListener(e -> mudarEspessura());
             } catch (NumberFormatException e) {
                 widthSlider.setValue(1);
                 widthLabel.setText("Espessura: N/D");
@@ -1409,55 +1641,219 @@ public class KmlMultiTool extends JFrame {
             if (cNode != null) {
                 cNode.setTextContent(kmlColor);
                 activeStyleItem.color = kmlColor;
+                activeStyleItem.recalcularOpacidade();
                 colorPreview.set_color(novo);
                 styleList.repaint();
             }
         }
 
         private void mudarEspessura() {
-            if (activeStyleItem == null) return;
-            int w = widthSlider.getValue();
-            widthLabel.setText("Espessura: " + w);
-            Node wNode = ((Element) activeStyleItem.node).getElementsByTagName("width").item(0);
-            if (wNode != null) {
-                wNode.setTextContent(String.valueOf((double) w));
-                activeStyleItem.width = String.valueOf((double) w);
-                styleList.repaint();
+            if (!widthSlider.getValueIsAdjusting()) {
+                if (activeStyleItem == null) return;
+                int w = widthSlider.getValue();
+                widthLabel.setText("Espessura: " + w);
+                Node wNode = ((Element) activeStyleItem.node).getElementsByTagName("width").item(0);
+                if (wNode != null) {
+                    String novoValor = String.valueOf((double) w);
+                    // Só atualiza o XML se o valor for diferente do atual
+                    if (!wNode.getTextContent().equals(novoValor)) {
+                        wNode.setTextContent(novoValor);
+                        activeStyleItem.width = novoValor;
+                        activeStyleItem.recalcularOpacidade();
+                        styleList.repaint();
+                    }
+                }
             }
         }
 
-        private void carregarValoresBalao() {
-            if (doc == null) {
-                JOptionPane.showMessageDialog(this, "Nenhum KML carregado.", "Atenção", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            String key = txtKey.getText().trim();
-            if (key.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Digite uma chave para buscar.", "Atenção", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
-            tableModel.setRowCount(0);
-            valueNodesMap.clear();
-            List<String> seen = new ArrayList<>();
-            NodeList dataNodes = doc.getElementsByTagName("Data");
-            for (int i = 0; i < dataNodes.getLength(); i++) {
-                Element dataEl = (Element) dataNodes.item(i);
-                Node dnNode = dataEl.getElementsByTagName("displayName").item(0);
-                if (dnNode == null || !dnNode.getTextContent().trim().equals(key)) continue;
-                Node valNode = dataEl.getElementsByTagName("value").item(0);
-                if (valNode == null) continue;
-                String val;
-                if (valNode.getFirstChild() != null && valNode.getFirstChild().getNodeType() == Node.CDATA_SECTION_NODE)
-                    val = valNode.getFirstChild().getNodeValue();
-                else
-                    val = valNode.getTextContent().trim();
-                if (!seen.contains(val)) {
-                    seen.add(val);
-                    tableModel.addRow(new Object[]{val});
-                    valueNodesMap.put(val, new ArrayList<>());
+    private void carregarValoresBalao() {
+        if (doc == null) {
+            JOptionPane.showMessageDialog(this, "Nenhum KML carregado.", "Atenção", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        String key = txtKey.getText().trim();
+        if (key.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Digite uma chave para buscar.", "Atenção", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+    
+        // 1. Prepara a UI para o estado "Pesquisando"
+        btnLoad.setEnabled(false);
+        btnLoad.setText("Pesquisando...");
+        statusLabel.setText("⏳ Buscando valores para a chave \"" + key + "\"...");
+        tableModel.setRowCount(0);
+    
+        // 2. SwingWorker para não travar a tela
+        new SwingWorker<Map<String, ArrayList<Node>>, Void>() {
+            
+            @Override
+            protected Map<String, ArrayList<Node>> doInBackground() throws Exception {
+                // Este mapa será o resultado da busca feita em segundo plano
+                Map<String, ArrayList<Node>> tempMap = new LinkedHashMap<>();
+                NodeList dataNodes = doc.getElementsByTagName("Data");
+                
+                for (int i = 0; i < dataNodes.getLength(); i++) {
+                    Element dataEl = (Element) dataNodes.item(i);
+                    Node dnNode = dataEl.getElementsByTagName("displayName").item(0);
+                    if (dnNode == null || !dnNode.getTextContent().trim().equals(key)) continue;
+                    
+                    Node valNode = dataEl.getElementsByTagName("value").item(0);
+                    if (valNode == null) continue;
+                    
+                    String val = (valNode.getFirstChild() != null && valNode.getFirstChild().getNodeType() == Node.CDATA_SECTION_NODE)
+                            ? valNode.getFirstChild().getNodeValue()
+                            : valNode.getTextContent().trim();
+                    
+                    tempMap.computeIfAbsent(val, k -> new ArrayList<>()).add(valNode);
                 }
-                valueNodesMap.get(val).add(valNode);
+                return tempMap;
             }
+    
+            @Override
+            protected void done() {
+                try {
+                    // 3. Recebe o resultado e atualiza a UI na Thread Principal
+                    valueNodesMap = (LinkedHashMap<String, ArrayList<Node>>) get(); 
+                    
+                    if (valueNodesMap.isEmpty()) {
+                        statusLabel.setText("⚠ Nenhum valor encontrado para chave \"" + key + "\".");
+                    } else {
+                        for (Map.Entry<String, ArrayList<Node>> entry : valueNodesMap.entrySet()) {
+                            tableModel.addRow(new Object[]{entry.getKey(), entry.getValue().size()});
+                        }
+                        statusLabel.setText("🔑 Chave \"" + key + "\": " + valueNodesMap.size() + " valor(es) único(s).");
+                    }
+                } catch (Exception ex) {
+                    statusLabel.setText("❌ Erro na busca.");
+                    JOptionPane.showMessageDialog(StyleEditorPanel.this, "Erro: " + ex.getMessage());
+                } finally {
+                    // 4. Restaura o botão
+                    btnLoad.setEnabled(true);
+                    btnLoad.setText("Carregar Valores");
+                }
+            }
+        }.execute();
+    }
+
+        private void renomearIdSelecionado() {
+            if (activeStyleItem == null) {
+                JOptionPane.showMessageDialog(this, "Selecione um estilo primeiro.", "Atenção", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        
+            String idAtual = activeStyleItem.id;
+            String novoId = JOptionPane.showInputDialog(this, "Novo ID:", idAtual);
+        
+            if (novoId == null) return;
+            novoId = normalizarId(novoId.trim());
+        
+            if (novoId.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "O ID não pode ficar vazio.", "Erro", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+        
+            if (novoId.equals(idAtual)) return;
+        
+            NodeList styles = doc.getElementsByTagName("Style");
+            for (int i = 0; i < styles.getLength(); i++) {
+                if (novoId.equals(((Element) styles.item(i)).getAttribute("id"))) {
+                    JOptionPane.showMessageDialog(this, "Já existe um Style com esse ID.", "Erro", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+            }
+        
+            ((Element) activeStyleItem.node.getParentNode()).setAttribute("id", novoId);
+        
+            NodeList styleUrls = doc.getElementsByTagName("styleUrl");
+            for (int i = 0; i < styleUrls.getLength(); i++) {
+                Node n = styleUrls.item(i);
+                String ref = n.getTextContent().trim();
+                String idRef = ref.startsWith("#") ? ref.substring(1) : ref;
+                if (idRef.equals(idAtual)) n.setTextContent("#" + novoId);
+            }
+        
+            activeStyleItem.id = novoId;
+            activeStyleItem.recalcularOpacidade();
+            styleList.repaint();
+            statusLabel.setText("ID alterado: " + idAtual + " → " + novoId);
+        }
+        
+        private String normalizarId(String s) {
+            s = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}|[^A-Za-z0-9_-]", "_");
+            return s.replaceAll("_+", "_").trim();
+        }
+
+        private void consolidarEstilos() {
+            if (doc == null) { JOptionPane.showMessageDialog(this, "Carregue um arquivo KML primeiro.", "Atenção", JOptionPane.WARNING_MESSAGE); return; }
+            boolean usarExtras = checkConsolidarExtras.isSelected();
+            LinkedHashMap<String, String> chaveParaRep = new LinkedHashMap<>();
+            HashMap<String, String> remapIds = new HashMap<>();
+            NodeList styles = doc.getElementsByTagName("Style");
+            List<Node> allStyles = new ArrayList<>();
+            for (int i = 0; i < styles.getLength(); i++) allStyles.add(styles.item(i));
+            List<Node> stylesToRemove = new ArrayList<>();
+            for (Node styleNode : allStyles) {
+                Element styleEl = (Element) styleNode;
+                String id = styleEl.getAttribute("id");
+                if (id.isEmpty()) continue;
+                String cor = "N/D", esp = "N/D";
+                NodeList ls = styleEl.getElementsByTagName("LineStyle");
+                if (ls.getLength() > 0) {
+                    Element lineStyle = (Element) ls.item(0);
+                    Node cNode = lineStyle.getElementsByTagName("color").item(0);
+                    Node wNode = lineStyle.getElementsByTagName("width").item(0);
+                    cor = (cNode != null) ? cNode.getTextContent().trim() : "N/D";
+                    esp = (wNode != null) ? wNode.getTextContent().trim() : "N/D";
+                }
+                StringBuilder chave = new StringBuilder(cor).append("|").append(esp);
+                if (usarExtras) {
+                    NodeList ps = styleEl.getElementsByTagName("PolyStyle");
+                    if (ps.getLength() > 0) { Node p = ((Element)ps.item(0)).getElementsByTagName("color").item(0); chave.append("|poly:").append(p!=null?p.getTextContent().trim():"N/D"); }
+                    NodeList il = styleEl.getElementsByTagName("IconStyle");
+                    if (il.getLength() > 0) { NodeList h = ((Element)il.item(0)).getElementsByTagName("href"); chave.append("|icon:").append(h.getLength()>0?h.item(0).getTextContent().trim():"N/D"); }
+                }
+                String chaveStr = chave.toString();
+                if (!chaveParaRep.containsKey(chaveStr)) { chaveParaRep.put(chaveStr, id); remapIds.put(id, id); }
+                else { remapIds.put(id, chaveParaRep.get(chaveStr)); stylesToRemove.add(styleNode); }
+            }
+            if (stylesToRemove.isEmpty()) { JOptionPane.showMessageDialog(this, "Nenhum Style duplicado encontrado.", "Sem duplicatas", JOptionPane.INFORMATION_MESSAGE); return; }
+            NodeList styleUrls = doc.getElementsByTagName("styleUrl");
+            int urlsAtualizados = 0;
+            for (int i = 0; i < styleUrls.getLength(); i++) {
+                Node urlNode = styleUrls.item(i);
+                String ref = urlNode.getTextContent().trim();
+                String idRef = ref.startsWith("#") ? ref.substring(1) : ref;
+                String rep = remapIds.get(idRef);
+                if (rep != null && !rep.equals(idRef)) { urlNode.setTextContent("#" + rep); urlsAtualizados++; }
+            }
+            for (Node n : stylesToRemove) n.getParentNode().removeChild(n);
+            listarEstilos();
+            statusLabel.setText("Consolidado: " + stylesToRemove.size() + " duplicado(s), " + urlsAtualizados + " ref. atualizada(s).");
+            JOptionPane.showMessageDialog(this, stylesToRemove.size() + " Style(s) removido(s).\n" + urlsAtualizados + " <styleUrl> redirecionado(s).\n\nClique em Salvar para gravar.", "Consolidação", JOptionPane.INFORMATION_MESSAGE);
+        }
+
+        private void removerStylesSemUso() {
+            if (doc == null) { JOptionPane.showMessageDialog(this, "Carregue um arquivo KML primeiro.", "Atenção", JOptionPane.WARNING_MESSAGE); return; }
+            Set<String> idsRef = new HashSet<>();
+            NodeList styleUrls = doc.getElementsByTagName("styleUrl");
+            for (int i = 0; i < styleUrls.getLength(); i++) { String r = styleUrls.item(i).getTextContent().trim(); idsRef.add(r.startsWith("#")?r.substring(1):r); }
+            NodeList styleMaps = doc.getElementsByTagName("StyleMap");
+            for (int i = 0; i < styleMaps.getLength(); i++) {
+                Element sm = (Element) styleMaps.item(i);
+                String smId = sm.getAttribute("id"); if (!smId.isEmpty()) idsRef.add(smId);
+                NodeList pairs = sm.getElementsByTagName("styleUrl");
+                for (int j = 0; j < pairs.getLength(); j++) { String r = pairs.item(j).getTextContent().trim(); idsRef.add(r.startsWith("#")?r.substring(1):r); }
+            }
+            NodeList styles = doc.getElementsByTagName("Style");
+            List<Node> allStyles = new ArrayList<>();
+            for (int i = 0; i < styles.getLength(); i++) allStyles.add(styles.item(i));
+            List<Node> toRemove = new ArrayList<>();
+            for (Node n : allStyles) { String id = ((Element)n).getAttribute("id"); if (!id.isEmpty() && !idsRef.contains(id)) toRemove.add(n); }
+            if (toRemove.isEmpty()) { JOptionPane.showMessageDialog(this, "Nenhum Style sem uso encontrado.", "Tudo em uso", JOptionPane.INFORMATION_MESSAGE); return; }
+            for (Node n : toRemove) n.getParentNode().removeChild(n);
+            listarEstilos();
+            statusLabel.setText("Removido(s): " + toRemove.size() + " Style(s) sem uso.");
+            JOptionPane.showMessageDialog(this, toRemove.size() + " Style(s) removido(s).\n\nClique em Salvar para gravar.", "Limpeza concluída", JOptionPane.INFORMATION_MESSAGE);
         }
 
         private void salvarAlteracoes() {
@@ -1484,10 +1880,76 @@ public class KmlMultiTool extends JFrame {
                     }
                 }
                 salvarDoc(doc, out);
+                statusLabel.setText("✅ Salvo em: " + new File(out).getName());
                 JOptionPane.showMessageDialog(this, "Arquivo salvo com sucesso!", "Concluído", JOptionPane.INFORMATION_MESSAGE);
             } catch (Exception ex) {
                 JOptionPane.showMessageDialog(this, "Erro ao salvar:\n" + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
             }
+        }
+    }
+
+    // --- CLASSES AUXILIARES ---
+    
+    static class ColorPreview extends JPanel {
+        private Color color;
+        public ColorPreview(String color_hex) {
+            setPreferredSize(new Dimension(24, 24));
+            setBorder(BorderFactory.createLineBorder(Color.GRAY));
+            set_color_from_kml(color_hex);
+        }
+        public void set_color_from_kml(String kml_hex) {
+            try {
+                int alpha = Integer.parseInt(kml_hex.substring(0, 2), 16);
+                int blue  = Integer.parseInt(kml_hex.substring(2, 4), 16);
+                int green = Integer.parseInt(kml_hex.substring(4, 6), 16);
+                int red   = Integer.parseInt(kml_hex.substring(6, 8), 16);
+                this.color = new Color(red, green, blue, alpha);
+            } catch (Exception e) { this.color = Color.BLACK; }
+            repaint();
+        }
+        public void set_color(Color color) { this.color = color; repaint(); }
+        public Color getColor() { return this.color; }
+        @Override protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            if (color != null) { g.setColor(color); g.fillRect(0, 0, getWidth(), getHeight()); }
+        }
+    }
+    
+    static class StyleListItem {
+        String id, label, color, width, opacity;
+        int usageCount;
+        Node node;
+
+        public StyleListItem(String id, String label, String color, String width, Node node, int usageCount) {
+            this.id = id;
+            this.label = label;
+            this.color = color;
+            this.width = width;
+            this.node = node;
+            this.usageCount = usageCount;
+            
+            // Chama o cálculo logo ao construir
+            recalcularOpacidade();
+        }
+
+        public void recalcularOpacidade() {
+            if (color != null && color.length() >= 8) {
+                try {
+                    int alphaDecimal = Integer.parseInt(color.substring(0, 2), 16);
+                    this.opacity = (int) ((alphaDecimal / 255.0) * 100) + "%";
+                } catch (Exception e) { this.opacity = "N/D"; }
+            } else {
+                this.opacity = "N/D";
+            }
+            
+            // Define o label que o JList vai exibir
+            this.label = String.format("ID: %4s | Cor: %8s | Transp: %4s | Esp: %5s | Uso: %d", 
+                                       id, color, opacity, width, usageCount);
+        }
+
+        @Override 
+        public String toString() { 
+            return this.label; 
         }
     }
 
