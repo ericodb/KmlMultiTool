@@ -176,7 +176,7 @@ public class KmlMultiTool extends JFrame {
 
         private JTextField txtInput, txtOutput, txtSeparator;
         private JTextField txtBgColor1, txtBgColor2, txtBorderColor;
-        private JCheckBox  checkFormat;
+        private JCheckBox  checkFormat, checkPontos, checkLinhas, checkPoligonos;
         private JPanel     imageLinkContainer, findReplaceContainer;
         private JEditorPane preview;
         private List<JTextField[]> imageLinkPairs   = new ArrayList<>();
@@ -184,8 +184,10 @@ public class KmlMultiTool extends JFrame {
         private Document   doc;
         private List<Node> placemarks = new ArrayList<>();
         private int        placemarkIndex = 0;
-        private JLabel     lblNavInfo;
-        private JButton    btnNavPrev, btnNavNext;
+        private JLabel       lblNavInfo;
+        private JButton      btnNavPrev, btnNavNext, btnExec;
+        private JProgressBar progressBarP1;
+        private JLabel       statusLabelP1;
 
         public ImageEditorPanel() {
             super(new BorderLayout(5, 5));
@@ -199,15 +201,35 @@ public class KmlMultiTool extends JFrame {
             txtOutput = new JTextField();
             panelTop.add(fileRow("Arquivo de entrada (KML/KMZ):", txtInput, e -> selecionarEntrada()));
             panelTop.add(fileRow("Arquivo de saída (KML/KMZ):",  txtOutput, e -> selecionarSaida()));
-        
+
             JPanel panelOption = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
             checkFormat = new JCheckBox("Aplicar nova formatação com cores e bordas");
+            txtSeparator = new JTextField("=", 3);
+            checkPontos = new JCheckBox("Pontos", true);
+            checkLinhas = new JCheckBox("Linhas", true);
+            checkPoligonos = new JCheckBox("Polígonos", true);
+
             panelOption.add(checkFormat);
             panelOption.add(new JLabel("Separador:"));
-            txtSeparator = new JTextField("=", 3);
             panelOption.add(txtSeparator);
+            panelOption.add(new JLabel("   |  Aplicar em:")); // Separador visual
+            panelOption.add(checkPontos);
+            panelOption.add(checkLinhas);
+            panelOption.add(checkPoligonos);
             panelTop.add(panelOption);
-        
+
+            boolean estaFormatando = checkFormat.isSelected();
+            checkPontos.setEnabled(estaFormatando);
+            checkLinhas.setEnabled(estaFormatando);
+            checkPoligonos.setEnabled(estaFormatando);
+
+            checkFormat.addActionListener(e -> {
+                boolean ativo = checkFormat.isSelected();
+                checkPontos.setEnabled(ativo);
+                checkLinhas.setEnabled(ativo);
+                checkPoligonos.setEnabled(ativo);
+            });
+
             JPanel panelColors = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
             panelColors.add(new JLabel("Cores:"));
             txtBgColor1    = addColorPicker(panelColors, "Fundo 1", "#DDDDFF");
@@ -267,17 +289,33 @@ public class KmlMultiTool extends JFrame {
             btnNavNext.setToolTipText("Próximo placemark");
             btnNavNext.setEnabled(false);
             btnNavNext.addActionListener(e -> navegarPlacemark(+1));
-            JButton btnExec = new JButton("💾  Executar e Salvar");
+            btnExec = new JButton("💾  Executar e Salvar");
             btnExec.addActionListener(e -> executar());
             panelBtns.add(btnNavPrev);
             panelBtns.add(lblNavInfo);
             panelBtns.add(btnNavNext);
             panelBtns.add(Box.createHorizontalStrut(20));
             panelBtns.add(btnExec);
-        
+
+            // Barra de progresso
+            JPanel progressRow = new JPanel(new BorderLayout(6, 0));
+            progressRow.setBorder(new EmptyBorder(0, 8, 4, 8));
+            progressBarP1 = new JProgressBar(0, 100);
+            progressBarP1.setStringPainted(true);
+            progressBarP1.setString("");
+            progressBarP1.setPreferredSize(new Dimension(200, 18));
+            statusLabelP1 = new JLabel(" ");
+            progressRow.add(progressBarP1, BorderLayout.WEST);
+            progressRow.add(statusLabelP1, BorderLayout.CENTER);
+
+            JPanel footerP1 = new JPanel();
+            footerP1.setLayout(new BoxLayout(footerP1, BoxLayout.Y_AXIS));
+            footerP1.add(panelBtns);
+            footerP1.add(progressRow);
+
             add(panelTop,   BorderLayout.NORTH);
             add(split,      BorderLayout.CENTER);
-            add(panelBtns,  BorderLayout.SOUTH);
+            add(footerP1,   BorderLayout.SOUTH);
         }
 
         // ---- helper: cabeçalho de seção com botão "+" ----
@@ -327,6 +365,59 @@ public class KmlMultiTool extends JFrame {
             if (f != null) txtOutput.setText(f.getAbsolutePath());
         }
 
+    private void extrairImagensExistentes(Node placemark) {
+        NodeList descNodes = ((Element) placemark).getElementsByTagName("description");
+        if (descNodes.getLength() == 0) return;
+
+        String desc = descNodes.item(0).getTextContent();
+        // Regex para capturar <a href="link"><img src="url"
+        Pattern p = Pattern.compile("<a\\s+href=\"([^\"]*)\".*?<img\\s+src=\"([^\"]*)\"", Pattern.CASE_INSENSITIVE);
+        Matcher m = p.matcher(desc);
+
+        // Remove tudo da tela antes de popular com o que veio do arquivo
+        imageLinkContainer.removeAll();
+        imageLinkPairs.clear();
+
+        while (m.find()) {
+            adicionarLinhaImagem(m.group(2), m.group(1));
+        }
+        imageLinkContainer.revalidate();
+        imageLinkContainer.repaint();
+    }
+
+    // Helper para adicionar linha na tela
+    private void adicionarLinhaImagem(String imgUrl, String linkUrl) {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 2));
+        JTextField imgF = new JTextField(imgUrl, 18);
+        JTextField linkF = new JTextField(linkUrl, 18);
+        
+        // Listener para atualizar preview ao digitar
+        javax.swing.event.DocumentListener dl = new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { atualizarPreview(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { atualizarPreview(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {}
+        };
+        imgF.getDocument().addDocumentListener(dl);
+        linkF.getDocument().addDocumentListener(dl);
+
+        row.add(new JLabel("URL Imagem:")); row.add(imgF);
+        row.add(new JLabel("Link:")); row.add(linkF);
+        
+        JButton rem = new JButton("−");
+        JTextField[] pair = {imgF, linkF};
+        rem.addActionListener(e -> { 
+            imageLinkContainer.remove(row); 
+            imageLinkPairs.remove(pair);
+            imageLinkContainer.revalidate();
+            imageLinkContainer.repaint();
+            atualizarPreview();
+        });
+        row.add(rem);
+        
+        imageLinkPairs.add(pair);
+        imageLinkContainer.add(row);
+    }
+
         // ---- carregar / parse KML ----
         private void carregarPreview(String caminho) {
             try {
@@ -348,6 +439,7 @@ public class KmlMultiTool extends JFrame {
                 buscarPlacemarks(doc.getDocumentElement());
                 if (!placemarks.isEmpty()) {
                     placemarkIndex = 0;
+                    extrairImagensExistentes(placemarks.get(0));
                     atualizarNavegacao();
                     atualizarPreview();
                 }
@@ -378,6 +470,13 @@ public class KmlMultiTool extends JFrame {
             while (child != null) { buscarPlacemarks(child); child = child.getNextSibling(); }
         }
 
+        private String getTipoPlacemark(Element pmEl) {
+            if (pmEl.getElementsByTagName("Point").getLength() > 0) return "Point";
+            if (pmEl.getElementsByTagName("LineString").getLength() > 0) return "Line";
+            if (pmEl.getElementsByTagName("Polygon").getLength() > 0) return "Polygon";
+            return "Unknown";
+        }
+
         // ---- preview ----
         private void atualizarPreview() {
             if (placemarks.isEmpty()) {
@@ -395,7 +494,9 @@ public class KmlMultiTool extends JFrame {
                     descContent = descContent.replace(p[0].getText(), p[1].getText());
             }
 
-            String finalContent = buildContent(descContent);
+            // Remove spans de imagens existentes no início do CDATA para não duplicar no preview
+            String descSemSpans = descContent.replaceAll("(?s)^(\\s*<span[^>]*>.*?</span>\\s*)+", "").trim();
+            String finalContent = buildContent(descSemSpans);
             String htmlToInject = buildImageHtml();
             preview.setText("<html><body><h3>" + nameText + "</h3>" + htmlToInject + finalContent + "</body></html>");
         }
@@ -524,51 +625,164 @@ public class KmlMultiTool extends JFrame {
                         "Atenção", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            try {
-                String balloonTemplate = "<div style='margin-bottom:10px;'><h3>$[name]</h3>"
-                        + buildImageHtml() + "</div>$[description]";
+            // Captura valores da UI antes de entrar na thread
+            final String saidaFinal    = saida;
+            final String imageHtml     = buildImageHtml();
+            final String balloonTmpl   = "<div style='margin-bottom:10px;'><h3>$[name]</h3>"
+                    + imageHtml + "</div>$[description]";
+            final boolean formatar     = checkFormat.isSelected();
+            final boolean incPontos    = checkPontos.isSelected();
+            final boolean incLinhas = checkLinhas.isSelected();
+            final boolean incPoligonos = checkPoligonos.isSelected();
+            final String bg1           = txtBgColor1.getText();
+            final String bg2           = txtBgColor2.getText();
+            final String border        = txtBorderColor.getText();
+            final String sepFinal      = sep;
+            final List<String[]> pairs = new ArrayList<>();
+            for (JTextField[] p : findReplacePairs)
+                if (!p[0].getText().isEmpty())
+                    pairs.add(new String[]{p[0].getText(), p[1].getText()});
 
-                for (Node pm : placemarks) {
-                    NodeList descNodes = ((Element) pm).getElementsByTagName("description");
-                    String descContent = (descNodes.getLength() > 0) ? descNodes.item(0).getTextContent() : "";
-
-                    for (JTextField[] p : findReplacePairs)
-                        if (!p[0].getText().isEmpty())
-                            descContent = descContent.replace(p[0].getText(), p[1].getText());
-
-                    String finalHtml = buildContent(descContent);
-
-                    // BalloonStyle
-                    Node styleNode = resolveStyleNode(pm);
-                    NodeList existing = ((Element) styleNode).getElementsByTagName("BalloonStyle");
-                    if (existing.getLength() > 0) styleNode.removeChild(existing.item(0));
-                    Element balloonStyleNode = doc.createElement("BalloonStyle");
-                    Element textEl = doc.createElement("text");
-                    textEl.appendChild(doc.createCDATASection(balloonTemplate));
-                    balloonStyleNode.appendChild(textEl);
-                    styleNode.appendChild(balloonStyleNode);
-
-                    // description
-                    NodeList descEls = ((Element) pm).getElementsByTagName("description");
-                    Element descEl;
-                    if (descEls.getLength() > 0) {
-                        descEl = (Element) descEls.item(0);
-                        while (descEl.hasChildNodes()) descEl.removeChild(descEl.getFirstChild());
-                    } else {
-                        descEl = doc.createElement("description");
-                        pm.appendChild(descEl);
-                    }
-                    descEl.appendChild(doc.createCDATASection(finalHtml));
-                }
-
-                salvarDoc(doc, saida);
-                JOptionPane.showMessageDialog(this,
-                        "KML/KMZ atualizado com sucesso!\nSalvo em: " + saida,
-                        "Sucesso", JOptionPane.INFORMATION_MESSAGE);
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(this,
-                        "Erro ao processar:\n" + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+            // Pré-indexa styles por ID para evitar O(n²)
+            Map<String, Node> styleById = new HashMap<>();
+            NodeList allStyles = doc.getElementsByTagName("Style");
+            for (int i = 0; i < allStyles.getLength(); i++) {
+                Element se = (Element) allStyles.item(i);
+                String sid = se.getAttribute("id");
+                if (!sid.isEmpty()) styleById.put(sid, se);
             }
+
+            if (!progressBarP1.isVisible()) { progressBarP1.setVisible(true); statusLabelP1.setVisible(true); }
+            btnExec.setEnabled(false);
+            progressBarP1.setValue(0);
+            progressBarP1.setString("Processando...");
+            statusLabelP1.setText("");
+
+            new SwingWorker<Void, Integer>() {
+                @Override
+                protected Void doInBackground() throws Exception {
+                    int total = placemarks.size();
+                    // Remove BalloonStyle antigos de todos os styles de uma vez
+                    for (int i = 0; i < allStyles.getLength(); i++) {
+                        NodeList bs = ((Element) allStyles.item(i)).getElementsByTagName("BalloonStyle");
+                        if (bs.getLength() > 0) allStyles.item(i).removeChild(bs.item(0));
+                    }
+                    Pattern spansPattern = Pattern.compile("(?s)^(\\s*<span[^>]*>.*?</span>\\s*)+");
+                    for (int idx = 0; idx < total; idx++) {
+                        Node pm = placemarks.get(idx);
+                        Element pmEl = (Element) pm;
+                        String tipo = getTipoPlacemark(pmEl);
+
+                        boolean habilitadoPeloTipo = (tipo.equals("Point") && incPontos) ||
+                                                         (tipo.equals("Line") && incLinhas) ||
+                                                         (tipo.equals("Polygon") && incPoligonos);
+                        if (!habilitadoPeloTipo) {
+                            continue;
+                        }
+                        boolean aplicarFormato = formatar && habilitadoPeloTipo;
+                        boolean deveProcessar = false;
+                        if (tipo.equals("Point") && incPontos) deveProcessar = true;
+                        else if (tipo.equals("Line") && incLinhas) deveProcessar = true;
+                        else if (tipo.equals("Polygon") && incPoligonos) deveProcessar = true;
+                        if (!deveProcessar) continue;
+
+                        if ((idx % 50) == 0 || idx == total - 1)
+                            publish((int) ((idx + 1) * 100.0 / total));
+
+                        // description: remove spans antigos, aplica substituições e formatação
+                        NodeList descNodes = ((Element) pm).getElementsByTagName("description");
+                        String descContent = descNodes.getLength() > 0
+                                ? descNodes.item(0).getTextContent() : "";
+                        descContent = spansPattern.matcher(descContent).replaceFirst("").trim();
+                        for (String[] p : pairs)
+                            descContent = descContent.replace(p[0], p[1]);
+                        String finalHtml;
+                        if (formatar) {
+                            finalHtml = descContent.toLowerCase().contains("<table")
+                                    ? processarTabelaHtml(descContent, border, bg1, bg2)
+                                    : processarTextoPlano(descContent, sepFinal, border, bg1, bg2);
+                        } else {
+                            finalHtml = descContent;
+                        }
+
+                        if (aplicarFormato) {
+                            Node styleNode = resolveStyleNodeCached(pm, styleById);
+                            NodeList existing = ((Element) styleNode).getElementsByTagName("BalloonStyle");
+                            if (existing.getLength() > 0) styleNode.removeChild(existing.item(0));
+                            
+                            Element bsNode = doc.createElement("BalloonStyle");
+                            Element textEl = doc.createElement("text");
+                            textEl.appendChild(doc.createCDATASection(balloonTmpl));
+                            bsNode.appendChild(textEl);
+                            styleNode.appendChild(bsNode);
+                        }
+
+                        // BalloonStyle via mapa pré-indexado
+                        Node styleNode = resolveStyleNodeCached(pm, styleById);
+                        NodeList existing = ((Element) styleNode).getElementsByTagName("BalloonStyle");
+                        if (existing.getLength() > 0) styleNode.removeChild(existing.item(0));
+                        Element bsNode = doc.createElement("BalloonStyle");
+                        Element textEl = doc.createElement("text");
+                        textEl.appendChild(doc.createCDATASection(balloonTmpl));
+                        bsNode.appendChild(textEl);
+                        styleNode.appendChild(bsNode);
+
+                        // Atualiza description
+                        NodeList descEls = ((Element) pm).getElementsByTagName("description");
+                        Element descEl;
+                        if (descEls.getLength() > 0) {
+                            descEl = (Element) descEls.item(0);
+                            while (descEl.hasChildNodes()) descEl.removeChild(descEl.getFirstChild());
+                        } else {
+                            descEl = doc.createElement("description");
+                            pm.appendChild(descEl);
+                        }
+                        descEl.appendChild(doc.createCDATASection(finalHtml));
+                    }
+                    salvarDoc(doc, saidaFinal);
+                    return null;
+                }
+                @Override
+                protected void process(List<Integer> chunks) {
+                    int pct = chunks.get(chunks.size() - 1);
+                    progressBarP1.setValue(pct);
+                    progressBarP1.setString(pct + "%");
+                }
+                @Override
+                protected void done() {
+                    btnExec.setEnabled(true);
+                    try {
+                        get();
+                        progressBarP1.setValue(100);
+                        progressBarP1.setString("Concluído");
+                        statusLabelP1.setText("✅ Salvo: " + new File(saidaFinal).getName());
+                        JOptionPane.showMessageDialog(ImageEditorPanel.this,
+                                "KML/KMZ atualizado!\nSalvo em: " + saidaFinal,
+                                "Sucesso", JOptionPane.INFORMATION_MESSAGE);
+                    } catch (Exception ex) {
+                        progressBarP1.setString("Erro");
+                        statusLabelP1.setText("❌ " + ex.getMessage());
+                        JOptionPane.showMessageDialog(ImageEditorPanel.this,
+                                "Erro:\n" + ex.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+                    }
+                }
+            }.execute();
+        }
+
+        /** Versão com mapa pré-indexado — O(1) em vez de O(n) por placemark. */
+        private Node resolveStyleNodeCached(Node pm, Map<String, Node> styleById) {
+            Node styleUrlNode = ((Element) pm).getElementsByTagName("styleUrl").item(0);
+            if (styleUrlNode != null) {
+                String id = styleUrlNode.getTextContent().trim();
+                if (id.startsWith("#")) id = id.substring(1);
+                Node found = styleById.get(id);
+                if (found != null) return found;
+            }
+            Node inline = ((Element) pm).getElementsByTagName("Style").item(0);
+            if (inline != null) return inline;
+            Element newStyle = doc.createElement("Style");
+            pm.appendChild(newStyle);
+            return newStyle;
         }
 
         private Node resolveStyleNode(Node pm) {
@@ -1346,7 +1560,7 @@ public class KmlMultiTool extends JFrame {
         private JLabel     statusLabel;
         private JButton    btnSalvar;
         private JButton    btnLoad;
-        private JCheckBox  checkConsolidarExtras;
+        private JCheckBox checkConsolidarExtras;
 
         public StyleEditorPanel() {
             super(new BorderLayout(0, 4));
@@ -1694,8 +1908,12 @@ public class KmlMultiTool extends JFrame {
                 
                 for (int i = 0; i < dataNodes.getLength(); i++) {
                     Element dataEl = (Element) dataNodes.item(i);
+                    // Compara displayName (filho) ou atributo name= — ambos são comuns em KML
                     Node dnNode = dataEl.getElementsByTagName("displayName").item(0);
-                    if (dnNode == null || !dnNode.getTextContent().trim().equals(key)) continue;
+                    String dataKey = (dnNode != null)
+                            ? dnNode.getTextContent().trim()
+                            : dataEl.getAttribute("name").trim();
+                    if (!dataKey.equals(key)) continue;
                     
                     Node valNode = dataEl.getElementsByTagName("value").item(0);
                     if (valNode == null) continue;
@@ -1932,6 +2150,7 @@ public class KmlMultiTool extends JFrame {
             recalcularOpacidade();
         }
 
+        // Método definido CORRETAMENTE dentro da classe
         public void recalcularOpacidade() {
             if (color != null && color.length() >= 8) {
                 try {
