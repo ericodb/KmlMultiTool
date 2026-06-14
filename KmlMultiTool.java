@@ -489,6 +489,28 @@ public class KmlMultiTool extends JFrame {
             NodeList descNodes = ((Element) pm).getElementsByTagName("description");
             String descContent = (descNodes.getLength() > 0) ? descNodes.item(0).getTextContent() : "";
 
+            // Resolve placeholders $[chave] com valores reais do ExtendedData do placemark
+            NodeList dataNodes = ((Element) pm).getElementsByTagName("Data");
+            for (int i = 0; i < dataNodes.getLength(); i++) {
+                Element dataEl = (Element) dataNodes.item(i);
+                // Pega o nome da chave (displayName ou atributo name=)
+                Node dnNode = dataEl.getElementsByTagName("displayName").item(0);
+                String chave = (dnNode != null && !dnNode.getTextContent().trim().isEmpty())
+                        ? dnNode.getTextContent().trim()
+                        : dataEl.getAttribute("name").trim();
+                // Pega o valor
+                Node valNode = dataEl.getElementsByTagName("value").item(0);
+                String valor = "";
+                if (valNode != null) {
+                    valor = (valNode.getFirstChild() != null
+                            && valNode.getFirstChild().getNodeType() == Node.CDATA_SECTION_NODE)
+                            ? valNode.getFirstChild().getNodeValue()
+                            : valNode.getTextContent().trim();
+                }
+                if (!chave.isEmpty())
+                    descContent = descContent.replace("$[" + chave + "]", valor);
+            }
+
             for (JTextField[] p : findReplacePairs) {
                 if (!p[0].getText().isEmpty())
                     descContent = descContent.replace(p[0].getText(), p[1].getText());
